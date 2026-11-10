@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Eginbeharraren deia
+Comment=Shooter multijugador de la Segunda Guerra Mundial
+Exec=eginbeharraren-deia
+Icon=eginbeharraren-deia
+Categories=Game;ActionGame;
+Terminal=false

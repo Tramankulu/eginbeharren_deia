@@ -1,0 +1,36 @@
+[package]
+name = "eginbeharraren-deia"
+version = "0.2.0"
+edition = "2021"
+description = "Shooter multijugador en línea de la Segunda Guerra Mundial"
+license = "MIT"
+default-run = "eginbeharraren-deia"
+
+[lib]
+name = "deia"
+path = "src/lib.rs"
+
+# El juego (con ventana)
+[[bin]]
+name = "eginbeharraren-deia"
+path = "src/main.rs"
+
+# Servidor dedicado (sin ventana, sin dependencias gráficas)
+[[bin]]
+name = "eginbeharraren-deia-server"
+path = "src/bin/eginbeharraren-deia-server.rs"
+
+[dependencies]
+macroquad = "0.4"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

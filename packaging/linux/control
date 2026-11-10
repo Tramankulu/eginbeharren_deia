@@ -1,0 +1,11 @@
+Package: eginbeharraren-deia
+Version: @VERSION@
+Section: games
+Priority: optional
+Architecture: amd64
+Depends: libgl1, libx11-6, libxi6, libasound2 | libasound2t64
+Maintainer: Eginbeharraren deia <eginbeharraren-deia@example.com>
+Description: Shooter multijugador en línea de la Segunda Guerra Mundial
+ Partidas por internet o red local: todos contra todos, por equipos,
+ buscar y destruir y captura la bandera. Incluye servidor dedicado
+ (eginbeharraren-deia-server).
