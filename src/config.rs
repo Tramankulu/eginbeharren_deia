@@ -8,6 +8,8 @@ pub struct Settings {
     pub sensitivity: f32,
     pub invert: bool,
     pub volume: f32,
+    /// Volumen de la música y del ambiente (aparte de los efectos)
+    pub music: f32,
     pub fov: f32,
     /// Filtro de pintura sobre la imagen (se puede quitar en equipos lentos).
     pub paint: bool,
@@ -38,6 +40,7 @@ impl Default for Settings {
             sensitivity: 2.2,
             invert: false,
             volume: 0.8,
+            music: 0.5,
             fov: 70.0,
             paint: true,
             last_address: String::new(),
@@ -102,6 +105,7 @@ impl Settings {
                 "servidor_bots" => s.host_bots = v.parse().unwrap_or(s.host_bots),
                 "servidor_nivel_bots" => s.host_bot_skill = v.parse().unwrap_or(s.host_bot_skill),
                 "servidor_aliados" => s.host_nation = crate::sim::parse_nation(v).unwrap_or(0),
+                "musica" => s.music = v.parse::<f32>().unwrap_or(0.5).clamp(0.0, 1.0),
                 "experiencia" => s.xp = v.parse().unwrap_or(0),
                 "clase" => s.class = v.parse().unwrap_or(0),
                 "arma" => s.primary = v.parse().unwrap_or(255),
@@ -123,10 +127,11 @@ impl Settings {
     pub fn to_text(&self) -> String {
         let mut t = self.base_text();
         t.push_str(&format!(
-            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nexperiencia={}\nclase={}\narma={}\nventaja={}\n",
+            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nmusica={:.2}\nexperiencia={}\nclase={}\narma={}\nventaja={}\n",
             self.host_bots,
             self.host_bot_skill,
             crate::sim::nation_short(self.host_nation),
+            self.music,
             self.xp,
             self.class,
             self.primary,

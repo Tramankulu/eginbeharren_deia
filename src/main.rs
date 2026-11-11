@@ -16,7 +16,7 @@ use deia::sfx;
 use deia::shader;
 use deia::sim::{gun, level_of, nation, nation_name, perk, perk_info, team_name, xp_for_level, GunKind, Loadout, CLASSES, GUNS, MAX_HEALTH, RANKS, STAND_EYE};
 use deia::world::{Aabb, World};
-use macroquad::audio::{load_sound_from_bytes, play_sound, PlaySoundParams, Sound};
+use macroquad::audio::{load_sound_from_bytes, play_sound, set_sound_volume, stop_sound, PlaySoundParams, Sound};
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
@@ -98,6 +98,19 @@ struct Sounds {
     claw: Option<Sound>,
     heartbeat: Option<Sound>,
     rank_up: Option<Sound>,
+    steps: [Option<Sound>; 4],
+    steps_at: [Spatial; 2],
+    jump: Option<Sound>,
+    land: Option<Sound>,
+    impact: Spatial,
+    whiz: Option<Sound>,
+    pin: Option<Sound>,
+    /// Bucles de fondo: ambiente de batalla (en partida) y música (en los menús)
+    ambience: Option<Sound>,
+    music: Option<Sound>,
+    /// Qué bucle suena: 0 ninguno, 1 música, 2 ambiente
+    bg: u8,
+    bg_volume: f32,
     ping: Option<Sound>,
     reload: Option<Sound>,
     bolt: Option<Sound>,
@@ -143,6 +156,17 @@ impl Sounds {
             claw: snd(sfx::claw()).await,
             heartbeat: snd(sfx::heartbeat()).await,
             rank_up: snd(sfx::rank_up()).await,
+            steps: [snd(sfx::footstep(0)).await, snd(sfx::footstep(1)).await, snd(sfx::footstep(2)).await, snd(sfx::footstep(3)).await],
+            steps_at: [spatial(sfx::footstep(1)).await, spatial(sfx::footstep(2)).await],
+            jump: snd(sfx::jump()).await,
+            land: snd(sfx::land()).await,
+            impact: spatial(sfx::impact()).await,
+            whiz: snd(sfx::whiz()).await,
+            pin: snd(sfx::pin()).await,
+            ambience: snd(sfx::ambience()).await,
+            music: snd(sfx::menu_music()).await,
+            bg: 0,
+            bg_volume: -1.0,
             ping: snd(sfx::ping()).await,
             reload: snd(sfx::reload()).await,
             bolt: snd(sfx::bolt()).await,
@@ -169,6 +193,30 @@ impl Sounds {
         let k = ((pan + 1.0) * 2.0).round().clamp(0.0, 4.0) as usize;
         let v = v * if front < -0.3 { 0.8 } else { 1.0 };
         self.play(&s.0[k], v);
+    }
+
+    /// Cambia el bucle de fondo (0 nada, 1 música, 2 ambiente) y su volumen.
+    fn background(&mut self, which: u8, volume: f32) {
+        if which != self.bg {
+            for s in [&self.music, &self.ambience].into_iter().flatten() {
+                stop_sound(s);
+            }
+            let s = match which {
+                1 => &self.music,
+                2 => &self.ambience,
+                _ => &None,
+            };
+            if let Some(s) = s {
+                play_sound(s, PlaySoundParams { looped: true, volume });
+            }
+            self.bg = which;
+            self.bg_volume = volume;
+        } else if (volume - self.bg_volume).abs() > 0.01 {
+            for s in [&self.music, &self.ambience].into_iter().flatten() {
+                set_sound_volume(s, volume);
+            }
+            self.bg_volume = volume;
+        }
     }
 
     fn play(&self, s: &Option<Sound>, v: f32) {
@@ -797,6 +845,12 @@ struct App {
     /// Balanceo de la mira telescópica ya aplicado (yaw, pitch)
     sway: (f32, f32),
     breath: f32,
+    /// Pasos propios: último paso dado, si estaba en el suelo y velocidad de caída
+    step_n: i64,
+    was_grounded: bool,
+    fall: f32,
+    /// Pasos de los demás (último paso de cada uno)
+    remote_steps: HashMap<u8, i64>,
     spectate: usize,
     rng: Rng,
     clock: f32,
@@ -849,6 +903,10 @@ impl App {
             heart_t: 0.0,
             sway: (0.0, 0.0),
             breath: 4.0,
+            step_n: 0,
+            was_grounded: true,
+            fall: 0.0,
+            remote_steps: HashMap::new(),
             spectate: 0,
             rng: Rng::new((get_time() * 1e6) as u64 ^ 0xF44),
             clock: 0.0,
@@ -1155,8 +1213,10 @@ impl App {
         s.sensitivity = (s.sensitivity + d as f32 * 0.2).clamp(0.2, 10.0);
         let d = stepper(x, 330.0, "Campo de visión", &format!("{:.0}°", s.fov));
         s.fov = (s.fov + d as f32 * 5.0).clamp(60.0, 90.0);
-        let d = stepper(x, 380.0, "Volumen", &format!("{:.0} %", s.volume * 100.0));
+        let d = stepper(x, 380.0, "Volumen de efectos", &format!("{:.0} %", s.volume * 100.0));
         s.volume = (s.volume + d as f32 * 0.1).clamp(0.0, 1.0);
+        let d = stepper(x, 550.0, "Música y ambiente", &format!("{:.0} %", s.music * 100.0));
+        s.music = (s.music + d as f32 * 0.1).clamp(0.0, 1.0);
         txt("Invertir eje vertical", x, 454.0, 22.0, DIM);
         if small_button(Rect::new(x + 260.0, 430.0, 160.0, 34.0), if s.invert { "Sí" } else { "No" }) {
             s.invert = !s.invert;
@@ -1313,6 +1373,28 @@ impl App {
             return;
         }
         self.process_events(&client, dt);
+        if let Some(p) = client.pred.as_ref() {
+            // Un paso cada media zancada del balanceo al andar
+            let n = (p.bob / std::f32::consts::PI).floor() as i64;
+            if n != self.step_n && p.grounded && p.moving > 0.15 {
+                let v = if p.crouching { 0.15 } else if p.sprinting { 0.5 } else { 0.32 };
+                self.sounds.play(&self.sounds.steps[(n.rem_euclid(4)) as usize], v);
+            }
+            self.step_n = n;
+            if self.was_grounded && !p.grounded && p.vel.y > 1.0 {
+                self.sounds.play(&self.sounds.jump, 0.45);
+            }
+            if !p.grounded {
+                self.fall = self.fall.max(-p.vel.y);
+            }
+            if !self.was_grounded && p.grounded {
+                if self.fall > 2.5 {
+                    self.sounds.play(&self.sounds.land, (self.fall / 8.0).clamp(0.3, 0.8));
+                }
+                self.fall = 0.0;
+            }
+            self.was_grounded = p.grounded;
+        }
         self.client = Some(client);
 
         // Espectador: clic para cambiar de jugador
@@ -1360,7 +1442,10 @@ impl App {
                 LocalFx::Reload { .. } => self.sounds.play(&self.sounds.reload, 0.6),
                 LocalFx::Ping => self.sounds.play(&self.sounds.ping, 0.7),
                 LocalFx::Dry => self.sounds.play(&self.sounds.dry, 0.6),
-                LocalFx::Throw => self.sounds.play(&self.sounds.throw, 0.6),
+                LocalFx::Throw => {
+                    self.sounds.play(&self.sounds.pin, 0.5);
+                    self.sounds.play(&self.sounds.throw, 0.6);
+                }
                 LocalFx::Switch => self.sounds.play(&self.sounds.switch, 0.5),
             }
         }
@@ -1369,6 +1454,19 @@ impl App {
             match e {
                 Ev::Shot { shooter, from, to, gun } => {
                     self.tracers.push((*from, *to, 0.05));
+                    if *shooter != me {
+                        // La bala pasa silbando cerca
+                        let seg = *to - *from;
+                        let len = seg.len().max(0.01);
+                        let t = ((ear - *from).dot(seg) / (len * len)).clamp(0.0, 1.0);
+                        let close = (*from + seg * t).dist(ear);
+                        if close < 2.5 && from.dist(ear) > 4.0 && t < 0.99 {
+                            self.sounds.play(&self.sounds.whiz, 0.7 * (1.0 - close / 2.5));
+                        }
+                    }
+                    if to.dist(ear) < 25.0 {
+                        self.sounds.play_at(&self.sounds.impact, 0.35 * near(*to, 25.0), *to, ear, yaw);
+                    }
                     spray(&mut self.fx, &mut self.rng, *to, 5, [0.55, 0.5, 0.42], 2.2, 1.4, 0.07, 0.5, 9.0, 0.0, 1.0);
                     if *shooter != me {
                         self.flash.insert(*shooter, 0.05);
@@ -1499,6 +1597,13 @@ impl App {
             let e = self.walk.entry(p.id).or_insert((p.pos, 0.0));
             e.1 += e.0.dist_flat(p.pos) * 2.6;
             e.0 = p.pos;
+            let n = (e.1 / std::f32::consts::PI).floor() as i64;
+            let last = self.remote_steps.insert(p.id, n).unwrap_or(n);
+            if n != last && p.alive && p.pos.dist(ear) < 28.0 {
+                let v = if p.crouch > 0.5 { 0.12 } else if p.sprint { 0.45 } else { 0.3 } * near(p.pos, 28.0);
+                let k = (n.rem_euclid(2)) as usize;
+                self.sounds.play_at(&self.sounds.steps_at[k], v, p.pos, ear, yaw);
+            }
         }
         // Mi propia muerte
         match (c.pred.as_ref(), self.my_death) {
@@ -2566,6 +2671,10 @@ impl App {
     fn frame(&mut self) {
         let dt = get_frame_time().min(0.1);
         self.clock += dt;
+        // Música en los menús y ambiente de batalla en partida
+        let which = if self.screen == Screen::Game { 2 } else { 1 };
+        let vol = self.settings.music * if which == 1 { 0.6 } else { 0.5 };
+        self.sounds.background(if vol > 0.01 { which } else { 0 }, vol);
         match self.screen.clone() {
             Screen::Main => self.screen_main(),
             Screen::Join => self.screen_join(),

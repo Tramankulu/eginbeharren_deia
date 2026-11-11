@@ -375,3 +375,243 @@ pub fn to_wav_stereo(s: &[f32], pan: f32) -> Vec<u8> {
     }
     v
 }
+
+// ----------------------------------------------------------------------
+// Pasos, saltos, impactos
+// ----------------------------------------------------------------------
+
+/// Paso sobre tierra y hierba (`k` cambia la pisada para que no suenen iguales).
+pub fn footstep(k: u64) -> Vec<f32> {
+    let mut r = Rng::new(100 + k);
+    let mut lp = Lp::new(900.0 + 250.0 * k as f32);
+    let mut lp2 = Lp::new(180.0);
+    let crunch = 0.5 + 0.15 * k as f32;
+    normalize(
+        gen(0.16, |t| {
+            let n = r.f() * 2.0 - 1.0;
+            // Talón y luego la punta
+            let heel = (-t / 0.018).exp();
+            let toe = (-(t - 0.05).max(0.0) / 0.03).exp() * if t > 0.05 { 0.6 } else { 0.0 };
+            let thump = lp2.run(n) * 3.0 * heel;
+            (lp.run(n) * crunch * (heel + toe) + thump) * (t / 0.002).min(1.0)
+        }),
+        0.5,
+    )
+}
+
+/// Salto: roce de la ropa y el equipo que tintinea.
+pub fn jump() -> Vec<f32> {
+    let mut r = Rng::new(130);
+    let mut lp = Lp::new(1500.0);
+    normalize(
+        gen(0.3, |t| {
+            let cloth = lp.run(r.f() * 2.0 - 1.0) * (t / 0.05).min(1.0) * (-t / 0.1).exp();
+            let gear = ((TAU * 2300.0 * t).sin() + (TAU * 3400.0 * t).sin()) * (-(t - 0.04).max(0.0) / 0.02).exp() * if t > 0.04 { 0.15 } else { 0.0 };
+            cloth + gear
+        }),
+        0.35,
+    )
+}
+
+/// Caída al suelo tras un salto.
+pub fn land() -> Vec<f32> {
+    let mut r = Rng::new(131);
+    let mut lp = Lp::new(500.0);
+    let mut lp2 = Lp::new(2200.0);
+    normalize(
+        gen(0.28, |t| {
+            let n = r.f() * 2.0 - 1.0;
+            let thud = lp.run(n) * 3.0 * (-t / 0.05).exp();
+            let gear = lp2.run(n) * (-(t - 0.02).max(0.0) / 0.04).exp() * 0.6;
+            (thud + gear) * (t / 0.002).min(1.0)
+        }),
+        0.6,
+    )
+}
+
+/// Bala que da en piedra o tierra cerca.
+pub fn impact() -> Vec<f32> {
+    let mut r = Rng::new(140);
+    let mut lp = Lp::new(3500.0);
+    normalize(
+        gen(0.18, |t| {
+            let n = lp.run(r.f() * 2.0 - 1.0);
+            let ping = (TAU * (2600.0 - 3000.0 * t) * t).sin() * (-t / 0.03).exp() * 0.4;
+            (n * (-t / 0.03).exp() + ping) * (t / 0.001).min(1.0)
+        }),
+        0.45,
+    )
+}
+
+/// Seguro de la granada al quitarlo.
+pub fn pin() -> Vec<f32> {
+    normalize(
+        gen(0.2, |t| {
+            let a = (TAU * 3800.0 * t).sin() * (-t / 0.02).exp();
+            let b = (TAU * 5100.0 * (t - 0.06).max(0.0)).sin() * (-(t - 0.06).max(0.0) / 0.03).exp() * if t > 0.06 { 0.7 } else { 0.0 };
+            a + b
+        }),
+        0.3,
+    )
+}
+
+// ----------------------------------------------------------------------
+// Ambiente y música
+// ----------------------------------------------------------------------
+
+/// Bucle que empalma sin corte: los extremos se funden entre sí.
+fn seamless(mut v: Vec<f32>, fade: usize) -> Vec<f32> {
+    let n = v.len();
+    let fade = fade.min(n / 2);
+    let tail: Vec<f32> = v[n - fade..].to_vec();
+    for i in 0..fade {
+        let k = i as f32 / fade as f32;
+        v[i] = v[i] * k + tail[i] * (1.0 - k);
+    }
+    v.truncate(n - fade);
+    v
+}
+
+/// Ambiente de campo de batalla lejano: viento, pájaros, alguna ráfaga y
+/// cañonazos a lo lejos. 40 s en bucle.
+pub fn ambience() -> Vec<f32> {
+    let dur = 42.0;
+    let n = (dur * RATE as f32) as usize;
+    let mut v = vec![0.0f32; n];
+    let mut r = Rng::new(200);
+    // Viento: ruido filtrado que sube y baja
+    let mut lp = Lp::new(260.0);
+    let mut lp2 = Lp::new(60.0);
+    for (i, x) in v.iter_mut().enumerate() {
+        let t = i as f32 / RATE as f32;
+        let gust = 0.55 + 0.3 * (t * 0.21).sin() + 0.15 * (t * 0.57 + 1.0).sin();
+        let w = lp.run(r.f() * 2.0 - 1.0) * 1.6 + lp2.run(r.f() * 2.0 - 1.0) * 2.5;
+        *x = w * gust * 0.35;
+    }
+    let mut add = |at: f32, s: &[f32], g: f32| {
+        let o = (at * RATE as f32) as usize;
+        for (k, x) in s.iter().enumerate() {
+            if o + k < n {
+                v[o + k] += x * g;
+            }
+        }
+    };
+    // Pájaros: trinos cortos
+    let mut t = 1.0;
+    while t < dur - 2.0 {
+        let base = r.range(2600.0, 4200.0);
+        let notes = 2 + r.index(4);
+        let mut chirp = Vec::new();
+        for k in 0..notes {
+            let f0 = base * r.range(0.85, 1.15);
+            let len = r.range(0.05, 0.12);
+            for i in 0..(len * RATE as f32) as usize {
+                let u = i as f32 / RATE as f32;
+                let f = f0 + 900.0 * (u / len) * if k % 2 == 0 { 1.0 } else { -1.0 };
+                chirp.push((TAU * f * u).sin() * (u / len * std::f32::consts::PI).sin());
+            }
+            chirp.extend(std::iter::repeat(0.0).take((r.range(0.03, 0.09) * RATE as f32) as usize));
+        }
+        add(t, &chirp, r.range(0.04, 0.09));
+        t += r.range(1.5, 5.0);
+    }
+    // Ráfagas y cañonazos muy lejanos
+    let far_shot = {
+        let mut rr = Rng::new(210);
+        let mut f = Lp::new(500.0);
+        gen(0.6, |t| f.run(rr.f() * 2.0 - 1.0) * (-t / 0.12).exp() * (t / 0.004).min(1.0))
+    };
+    let boom = {
+        let mut rr = Rng::new(211);
+        let mut f = Lp::new(90.0);
+        gen(3.0, |t| f.run(rr.f() * 2.0 - 1.0) * 4.0 * (-t / 0.8).exp() * (t / 0.03).min(1.0))
+    };
+    let mut t = 3.0;
+    while t < dur - 4.0 {
+        if r.chance(0.35) {
+            add(t, &boom, r.range(0.25, 0.45));
+        } else {
+            let shots = 3 + r.index(7);
+            let gap = r.range(0.09, 0.2);
+            let g = r.range(0.08, 0.18);
+            for k in 0..shots {
+                add(t + k as f32 * gap * r.range(0.8, 1.3), &far_shot, g);
+            }
+        }
+        t += r.range(2.5, 7.0);
+    }
+    normalize(seamless(v, (2.0 * RATE as f32) as usize), 0.55)
+}
+
+/// Música tranquila para los menús: acordes suaves de cuerda y una melodía
+/// lenta de flauta, en modo menor. 48 s en bucle.
+pub fn menu_music() -> Vec<f32> {
+    let bpm = 66.0;
+    let beat = 60.0 / bpm;
+    // La menor · Fa · Do · Sol, dos compases cada uno, dos veces con variación
+    let chords: [[f32; 3]; 4] = [[57.0, 60.0, 64.0], [53.0, 57.0, 60.0], [48.0, 52.0, 55.0], [55.0, 59.0, 62.0]];
+    let melody: [(f32, f32); 26] = [
+        (76.0, 2.0), (74.0, 1.0), (72.0, 1.0), (71.0, 2.0), (72.0, 2.0),
+        (69.0, 3.0), (67.0, 1.0), (69.0, 4.0),
+        (72.0, 2.0), (71.0, 1.0), (69.0, 1.0), (67.0, 2.0), (64.0, 2.0),
+        (67.0, 3.0), (69.0, 1.0), (71.0, 4.0),
+        (76.0, 2.0), (77.0, 1.0), (76.0, 1.0), (74.0, 2.0), (72.0, 2.0),
+        (71.0, 2.0), (72.0, 1.0), (74.0, 1.0), (69.0, 4.0), (0.0, 4.0),
+    ];
+    let midi = |m: f32| 440.0 * 2f32.powf((m - 69.0) / 12.0);
+    let bars = 16.0;
+    let dur = bars * 4.0 * beat;
+    let n = (dur * RATE as f32) as usize;
+    let mut v = vec![0.0f32; n];
+    // Acordes: cuerdas con vibrato lento y ataque suave
+    for i in 0..n {
+        let t = i as f32 / RATE as f32;
+        let bar = (t / (4.0 * beat)) as usize;
+        let c = chords[(bar / 2) % 4];
+        let local = t % (8.0 * beat);
+        let env = (local / 1.5).min(1.0) * (1.0 - ((local - 8.0 * beat + 1.2) / 1.2).max(0.0)).max(0.0);
+        let mut s = 0.0;
+        for (k, &m) in c.iter().enumerate() {
+            let f = midi(m - 12.0) * (1.0 + 0.003 * (t * 5.0 + k as f32).sin());
+            s += (TAU * f * t).sin() * 0.5 + (TAU * f * 2.0 * t).sin() * 0.15 + (TAU * f * 3.0 * t).sin() * 0.05;
+        }
+        // Bajo
+        let fb = midi(c[0] - 24.0);
+        s += (TAU * fb * t).sin() * 0.5;
+        v[i] = s * env * 0.18;
+    }
+    // Melodía de flauta (empieza en el compás 3)
+    let mut t0 = 8.0 * beat;
+    for &(m, len) in melody.iter() {
+        let d = len * beat;
+        if m > 0.0 {
+            let f = midi(m);
+            let mut r = Rng::new(m as u64);
+            let mut breath = Lp::new(2500.0);
+            for i in 0..(d * RATE as f32) as usize {
+                let u = i as f32 / RATE as f32;
+                let at = ((t0 + u) * RATE as f32) as usize;
+                if at >= n {
+                    break;
+                }
+                let env = (u / 0.12).min(1.0) * (1.0 - (u / d).powf(3.0)).max(0.0);
+                let vib = 1.0 + 0.004 * (u * 5.5).sin() * (u / 0.4).min(1.0);
+                let tone = (TAU * f * vib * u).sin() + 0.25 * (TAU * f * 2.0 * vib * u).sin();
+                let air = breath.run(r.f() * 2.0 - 1.0) * 0.08;
+                v[at] += (tone + air) * env * 0.22;
+            }
+        }
+        t0 += d;
+        if t0 >= dur {
+            break;
+        }
+    }
+    // Reverberación sencilla (ecos)
+    for (delay, g) in [(0.13f32, 0.25f32), (0.29, 0.18), (0.47, 0.12)] {
+        let d = (delay * RATE as f32) as usize;
+        for i in (d..n).rev() {
+            v[i] += v[i - d] * g;
+        }
+    }
+    normalize(seamless(v, (1.5 * RATE as f32) as usize), 0.5)
+}

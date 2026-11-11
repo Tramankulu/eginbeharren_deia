@@ -94,7 +94,6 @@ pub struct Brain {
     role: u8,
     prev_health: f32,
     hurt_t: f32,
-    fire_toggle: bool,
     /// Rodeo hacia el objetivo (por un flanco) y si ya se ha pasado por él
     via: Option<V3>,
     via_done: bool,
@@ -141,7 +140,6 @@ impl Brain {
             role,
             prev_health: MAX_HEALTH,
             hurt_t: 99.0,
-            fire_toggle: false,
             via: None,
             via_done: false,
             rng,
