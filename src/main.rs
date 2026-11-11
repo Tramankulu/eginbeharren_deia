@@ -8,6 +8,7 @@ mod arte;
 
 use deia::client::{resolve, FrameInput, LanScanner, LocalFx, NetClient, Status};
 use deia::config::Settings;
+use deia::lang;
 use deia::geo::{self, Geo, SoldierLook, ViewParams, Vtx};
 use deia::math::{lerp, v3, Rng, V3};
 use deia::net::*;
@@ -603,6 +604,9 @@ struct Fonts {
     ui: Font,
     ui_bold: Font,
     title: Font,
+    /// Para el cirílico (ruso), que Outfit no tiene
+    cyr: Font,
+    cyr_bold: Font,
 }
 
 thread_local! {
@@ -613,14 +617,16 @@ thread_local! {
 
 fn load_fonts() {
     let load = |b: &[u8]| load_ttf_font_from_bytes(b).ok();
-    let (Some(ui), Some(ui_bold), Some(title)) = (
+    let (Some(ui), Some(ui_bold), Some(title), Some(cyr), Some(cyr_bold)) = (
         load(include_bytes!("../assets/fonts/Outfit-Regular.ttf")),
         load(include_bytes!("../assets/fonts/Outfit-Bold.ttf")),
         load(include_bytes!("../assets/fonts/Lora-Bold.ttf")),
+        load(include_bytes!("../assets/fonts/DejaVuSans.ttf")),
+        load(include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf")),
     ) else {
         return;
     };
-    FONTS.with(|f| *f.borrow_mut() = Some(Box::leak(Box::new(Fonts { ui, ui_bold, title }))));
+    FONTS.with(|f| *f.borrow_mut() = Some(Box::leak(Box::new(Fonts { ui, ui_bold, title, cyr, cyr_bold }))));
 }
 
 #[derive(Clone, Copy)]
@@ -630,24 +636,32 @@ enum FontKind {
     Title,
 }
 
-fn with_font<R>(k: FontKind, f: impl FnOnce(Option<&Font>) -> R) -> R {
+/// Fuente para un texto: si lleva cirílico, una que lo tenga (Lora lo tiene;
+/// para el resto se usa DejaVu Sans).
+fn with_font<R>(k: FontKind, text: &str, f: impl FnOnce(Option<&Font>) -> R) -> R {
+    let cyrillic = text.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c));
     FONTS.with(|fs| {
         let fs = fs.borrow();
-        let font = fs.as_ref().map(|x| match k {
-            FontKind::Ui => &x.ui,
-            FontKind::Bold => &x.ui_bold,
-            FontKind::Title => &x.title,
+        let font = fs.as_ref().map(|x| match (k, cyrillic) {
+            (FontKind::Ui, false) => &x.ui,
+            (FontKind::Bold, false) => &x.ui_bold,
+            (FontKind::Title, _) => &x.title,
+            (FontKind::Ui, true) => &x.cyr,
+            (FontKind::Bold, true) => &x.cyr_bold,
         });
         f(font)
     })
 }
 
 fn text_wk(k: FontKind, s: &str, size: f32) -> f32 {
-    with_font(k, |f| measure_text(s, f, size as u16, 1.0).width)
+    let s = lang::tr(s);
+    with_font(k, &s, |f| measure_text(&s, f, size as u16, 1.0).width)
 }
 
 fn txt_k(k: FontKind, s: &str, x: f32, y: f32, size: f32, col: Color) {
-    with_font(k, |font| {
+    let s = lang::tr(s);
+    let s = s.as_str();
+    with_font(k, s, |font| {
         let params = |c: Color| TextParams { font, font_size: size as u16, color: c, ..Default::default() };
         draw_text_ex(s, x + 1.5, y + 1.5, params(Color::new(0.0, 0.0, 0.0, 0.5 * col.a)));
         draw_text_ex(s, x, y, params(col));
@@ -713,7 +727,9 @@ fn button(r: Rect, label: &str) -> bool {
     let bg = if hover { Color::new(0.96, 0.78, 0.42, 0.97) } else { Color::new(0.98, 0.95, 0.87, 0.93) };
     round_rect(r, 12.0, bg);
     let ink = Color::new(0.24, 0.18, 0.12, 1.0);
-    with_font(FontKind::Title, |font| {
+    let label = lang::tr(label);
+    let label = label.as_str();
+    with_font(FontKind::Title, label, |font| {
         let w = measure_text(label, font, 24, 1.0).width;
         draw_text_ex(label, r.x + (r.w - w) / 2.0, r.y + r.h / 2.0 + 8.0, TextParams { font, font_size: 24, color: ink, ..Default::default() });
     });
@@ -725,7 +741,9 @@ fn small_button(r: Rect, label: &str) -> bool {
     let bg = if hover { Color::new(0.96, 0.78, 0.42, 0.97) } else { Color::new(0.94, 0.90, 0.80, 0.9) };
     round_rect(r, 8.0, bg);
     let ink = Color::new(0.24, 0.18, 0.12, 1.0);
-    with_font(FontKind::Bold, |font| {
+    let label = lang::tr(label);
+    let label = label.as_str();
+    with_font(FontKind::Bold, label, |font| {
         let w = measure_text(label, font, 20, 1.0).width;
         draw_text_ex(label, r.x + (r.w - w) / 2.0, r.y + r.h / 2.0 + 7.0, TextParams { font, font_size: 20, color: ink, ..Default::default() });
     });
@@ -1174,7 +1192,7 @@ impl App {
         for (k, m) in Mode::ALL.iter().enumerate() {
             let on = self.settings.host_modes.iter().any(|s| s == m.short());
             let r = Rect::new(x + (k % 3) as f32 * 240.0, 388.0 + (k / 3) as f32 * 44.0, 228.0, 36.0);
-            let label = format!("{} {}", if on { "[x]" } else { "[ ]" }, m.name());
+            let label = format!("{} {}", if on { "[x]" } else { "[ ]" }, lang::tr(m.name()));
             if small_button(r, &label) {
                 if on {
                     if self.settings.host_modes.len() > 1 {
@@ -1214,7 +1232,21 @@ impl App {
         self.title();
         let cx = screen_width() / 2.0;
         let x = cx - 260.0;
-        panel(Rect::new(x - 20.0, 180.0, 560.0, 500.0), 0.8);
+        panel(Rect::new(x - 20.0, 130.0, 560.0, 550.0), 0.8);
+        let lang_label = if lang::current() == "en" { lang::tr("Idioma") } else { format!("{} · Language", lang::tr("Idioma")) };
+        txt(&lang_label, x, 174.0, 22.0, DIM);
+        let lr = Rect::new(x + 260.0, 150.0, 160.0, 34.0);
+        let step = if small_button(lr, lang::display_name(&self.settings.lang)) {
+            1
+        } else if lr.contains(mouse_position().into()) && is_mouse_button_pressed(MouseButton::Right) {
+            -1
+        } else {
+            0
+        };
+        if step != 0 {
+            self.settings.lang = lang::cycle(&self.settings.lang, step).to_string();
+            lang::set(&self.settings.lang);
+        }
         text_field(Rect::new(x, 220.0, 300.0, 40.0), "Tu nombre", &mut self.settings.name, 5, &mut self.focus, 20, any_char);
         let s = &mut self.settings;
         let d = stepper(x, 280.0, "Sensibilidad del ratón", &format!("{:.1}", s.sensitivity));
@@ -1553,7 +1585,10 @@ impl App {
                         continue;
                     }
                     let col = if teams { team_color(t) } else { CREAM };
-                    let prefix = if *team_only { "(equipo) " } else { "" };
+                    let prefix = if *team_only { lang::tr("(equipo) ") } else { String::new() };
+                    // Los avisos de los bots se traducen; lo que escriben las personas, no
+                    let bot = self.client.as_ref().and_then(|c| c.snap.as_ref()).map(|s| s.players.iter().any(|p| p.id == *from && p.bot)).unwrap_or(false);
+                    let text = if bot { lang::tr(text) } else { text.clone() };
                     self.chat_log.push((format!("{prefix}{name}: {text}"), col, 10.0));
                     if self.chat_log.len() > 8 {
                         self.chat_log.remove(0);
@@ -2216,8 +2251,9 @@ impl App {
                     txt_c(&format!("Pulsa F para usar la {}", gun(mounted_gun(nat)).name), cx, cy + 150.0, 22.0, GOLD);
                 }
             }
-            if a.mag == 0 && a.reserve == 0 {
-                txt_c("Sin munición: cambia de arma (Q)", cx, cy + 90.0, 20.0, Color::new(1.0, 0.6, 0.4, 1.0));
+            let other = p.ammo[1 - (p.slot as usize).min(1)];
+            if a.mag == 0 && a.reserve == 0 && other.mag == 0 && other.reserve == 0 {
+                txt_c("Sin munición: coge un arma del suelo (F)", cx, cy + 90.0, 20.0, Color::new(1.0, 0.6, 0.4, 1.0));
             }
             // Pista de objetivo
             let mut hint: Option<String> = None;
@@ -2307,10 +2343,11 @@ impl App {
                 weapon::BASH => "culatazo",
                 _ => "",
             };
+            let w_name = lang::tr(w_name);
             let mid = if f.weapon == weapon::SUICIDE {
-                " se ha suicidado".to_string()
+                lang::tr(" se ha suicidado")
             } else {
-                format!(" [{}{}] ", w_name, if f.head { " · cabeza" } else { "" })
+                format!(" [{}{}] ", w_name, if f.head { lang::tr(" · cabeza") } else { String::new() })
             };
             let kc = if teams { team_color(f.kteam) } else { CREAM };
             let vc = if teams { team_color(f.vteam) } else { CREAM };
@@ -2350,7 +2387,7 @@ impl App {
             txt(text, 20.0, base_y - k as f32 * 22.0, 20.0, with_alpha(*col, a));
         }
         if let Some((text, team)) = &self.chat {
-            let label = if *team { "Equipo: " } else { "Todos: " };
+            let label = lang::tr(if *team { "Equipo: " } else { "Todos: " });
             draw_rectangle(16.0, base_y + 10.0, 560.0, 30.0, Color::new(0.0, 0.0, 0.0, 0.6));
             let caret = if (self.clock * 2.0) as i64 % 2 == 0 { "|" } else { "" };
             txt(&format!("{label}{text}{caret}"), 24.0, base_y + 32.0, 20.0, CREAM);
@@ -2408,13 +2445,15 @@ impl App {
             let col = if s.mode == Mode::Sd && s.bomb_state == bomb_state::PLANTED { Color::new(1.0, 0.3, 0.2, 1.0) } else { CREAM };
             txt_c(&mid, cx, 38.0, 26.0, col);
             let sub = match s.mode {
-                Mode::Sd => format!(
-                    "Ronda {} · atacan los {} · gana quien llegue a {}{}",
-                    s.round,
-                    team_name(s.attackers),
-                    s.score_limit,
-                    if s.bomb_state == bomb_state::PLANTED { " · ¡BOMBA COLOCADA!" } else { "" }
-                ),
+                Mode::Sd => {
+                    let base = if s.attackers == deia::sim::ALLIES {
+                        format!("Ronda {} · atacan los Aliados · gana quien llegue a {}", s.round, s.score_limit)
+                    } else {
+                        format!("Ronda {} · ataca el Eje · gana quien llegue a {}", s.round, s.score_limit)
+                    };
+                    let planted = if s.bomb_state == bomb_state::PLANTED { lang::tr(" · ¡BOMBA COLOCADA!") } else { String::new() };
+                    format!("{}{}", lang::tr(&base), planted)
+                }
                 Mode::Ctf => format!("Captura la bandera · {} capturas para ganar", s.score_limit),
                 Mode::Hq => format!("Cuartel General · {} puntos para ganar", s.score_limit),
                 _ => format!("Por equipos · {} bajas para ganar", s.score_limit),
@@ -3186,6 +3225,10 @@ async fn main() {
     if std::env::var("DEIA_PINTURA").map(|v| v == "no").unwrap_or(false) {
         settings.paint = false;
     }
+    if let Ok(l) = std::env::var("DEIA_IDIOMA") {
+        settings.lang = l;
+    }
+    lang::set(&settings.lang);
     let sounds = Sounds::load(settings.volume).await;
     let t0 = get_time();
     let mut app = App::new(settings, sounds);

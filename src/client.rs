@@ -397,6 +397,14 @@ impl NetClient {
             if inp.use_key {
                 b |= btn::USE;
             }
+            // Arma vacía del todo (cargador y reserva): se saca la otra si le queda munición
+            if let Some(p) = self.pred.as_ref() {
+                let cur = (self.slot as usize).min(1);
+                let empty = |a: &Ammo| a.mag == 0 && a.reserve == 0;
+                if !p.is_mounted() && empty(&p.ammo[cur]) && !empty(&p.ammo[1 - cur]) {
+                    self.slot = 1 - cur as u8;
+                }
+            }
             let cmd = Cmd {
                 seq: self.seq,
                 view_tick: self.render_tick().max(0.0) as u32,

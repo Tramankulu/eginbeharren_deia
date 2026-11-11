@@ -32,6 +32,8 @@ pub struct Settings {
     pub primary: u8,
     pub perk: u8,
     pub secondary: u8,
+    /// Idioma de la interfaz (ver `lang::LANGS`); por defecto, euskera
+    pub lang: String,
 }
 
 impl Default for Settings {
@@ -57,6 +59,7 @@ impl Default for Settings {
             primary: 255,
             perk: 0,
             secondary: 255,
+            lang: crate::lang::DEFAULT.into(),
         }
     }
 }
@@ -113,6 +116,7 @@ impl Settings {
                 "arma" => s.primary = v.parse().unwrap_or(255),
                 "ventaja" => s.perk = v.parse().unwrap_or(0),
                 "pistola" => s.secondary = v.parse().unwrap_or(255),
+                "idioma" if crate::lang::LANGS.iter().any(|l| l.0 == v) => s.lang = v.to_string(),
                 _ => {}
             }
         }
@@ -130,7 +134,7 @@ impl Settings {
     pub fn to_text(&self) -> String {
         let mut t = self.base_text();
         t.push_str(&format!(
-            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nmusica={:.2}\nexperiencia={}\nclase={}\narma={}\nventaja={}\npistola={}\n",
+            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nmusica={:.2}\nexperiencia={}\nclase={}\narma={}\nventaja={}\npistola={}\nidioma={}\n",
             self.host_bots,
             self.host_bot_skill,
             crate::sim::nation_short(self.host_nation),
@@ -139,7 +143,8 @@ impl Settings {
             self.class,
             self.primary,
             self.perk,
-            self.secondary
+            self.secondary,
+            self.lang
         ));
         t
     }

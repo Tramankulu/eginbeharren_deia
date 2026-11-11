@@ -165,7 +165,20 @@ derecha según de dónde vengan.
 | M | Cambiar de equipo |
 | Esc | Menú (sensibilidad, desconectar) |
 
-Nombre, sensibilidad, campo de visión, volumen e inversión del ratón se guardan en *Ajustes*.
+Nombre, idioma, sensibilidad, campo de visión, volumen e inversión del ratón se guardan en *Ajustes*.
+
+Si el arma que llevas se queda sin balas (cargador y reserva), se saca sola la otra.
+
+### Idiomas
+
+El juego arranca en **euskera**. En *Ajustes › Hizkuntza* se puede cambiar a castellano,
+inglés, francés, alemán, ruso, catalán, gallego, valenciano o bretón (clic: siguiente; clic
+derecho: anterior). Los avisos del servidor y de los bots se traducen en cada ordenador, así que
+cada jugador los lee en su idioma aunque compartan partida.
+
+Las traducciones están en `assets/idiomas/textos.txt`: una línea por frase, con el castellano en
+la primera columna. Se pueden corregir o completar editando ese archivo (se incluye en el
+ejecutable al compilar). Las de bretón, sobre todo, conviene que las revise alguien que lo hable.
 
 ## Cómo se generan los instaladores
 
@@ -236,5 +249,6 @@ acierta 8 de 8 disparos con compensación, frente a 2 de 8 sin ella.
 | `src/shader.rs` | Sombreadores: luz, cielo, nubes, bruma, viento, detalle de cada material y filtro de pintura |
 | `src/sfx.rs` | Sonidos sintetizados |
 | `src/config.rs` | Ajustes guardados |
-| `assets/fonts/` | Tipografías Lora y Outfit (licencia SIL OFL, incluida) |
+| `src/lang.rs` | Traducción de la interfaz (tabla en `assets/idiomas/textos.txt`) |
+| `assets/fonts/` | Tipografías Lora y Outfit (licencia SIL OFL) y DejaVu Sans para el cirílico (licencia incluida) |
 | `packaging/` | Instaladores de cada sistema |

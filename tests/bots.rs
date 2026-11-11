@@ -249,4 +249,13 @@ fn no_aparece_hasta_elegir_armas() {
     let p = c.pred.as_ref().expect("no aparece tras elegir");
     // Clase asalto: un subfusil de su nación
     assert_eq!(gun(p.guns[0]).kind, GunKind::Smg);
+    // Sin munición en el arma principal: se saca la otra sola
+    assert_eq!(c.slot, 0);
+    let me = c.my_id as usize;
+    s.slots[me].as_mut().unwrap().ps.ammo[0] = Ammo { mag: 0, reserve: 0 };
+    for _ in 0..TICK_HZ {
+        s.update();
+        c.update(&FrameInput::default(), DT, &world);
+    }
+    assert_eq!(c.slot, 1, "no cambia de arma al quedarse sin balas");
 }

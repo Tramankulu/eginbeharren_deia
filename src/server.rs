@@ -495,7 +495,7 @@ impl Server {
         });
         self.send_welcome(id);
         let txt = if self.mode.teams() {
-            format!("{} se une a los {}", name, team_name(team))
+            if team == ALLIES { format!("{name} se une a los Aliados") } else { format!("{name} se une al Eje") }
         } else {
             format!("{name} se une a la partida")
         };
@@ -650,7 +650,7 @@ impl Server {
         s.alive = false;
         s.respawn_t = 1.0;
         let name = s.name.clone();
-        self.announce(format!("{} se cambia a los {}", name, team_name(want)), tone::NEUTRAL);
+        self.announce(if want == ALLIES { format!("{name} se cambia a los Aliados") } else { format!("{name} se cambia al Eje") }, tone::NEUTRAL);
     }
 
     fn apply_cmd(&mut self, id: usize, cmd: &Cmd) {
@@ -1277,7 +1277,7 @@ impl Server {
         let att = self.attackers();
         self.push(Ev::Whistle);
         self.announce(
-            format!("Ronda {}: atacan los {}. Destruid el objetivo A o B.", self.round, team_name(att)),
+            if att == ALLIES { format!("Ronda {}: atacan los Aliados. Destruid el objetivo A o B.", self.round) } else { format!("Ronda {}: ataca el Eje. Destruid el objetivo A o B.", self.round) },
             tone::ALERT,
         );
     }
@@ -1291,7 +1291,7 @@ impl Server {
             s.ps.busy = false;
         }
         let tone = if winner == ALLIES { tone::ALLIES } else { tone::AXIS };
-        self.announce(format!("{}. Ronda para los {}.", reason, team_name(winner)), tone);
+        self.announce(if winner == ALLIES { format!("{reason}. Ronda para los Aliados.") } else { format!("{reason}. Ronda para el Eje.") }, tone);
         if self.team_scores[winner as usize] >= self.score_limit() {
             self.end_match();
         }
@@ -1373,7 +1373,7 @@ impl Server {
                 let pos = self.slots[id].as_ref().map(|s| s.ps.pos).unwrap_or(self.world.flag_bases[t]);
                 self.flags[t] = FlagInfo { state: flag_state::DROPPED, carrier: 0, pos: v3(pos.x, 0.0, pos.z) };
                 self.flag_drop_t[t] = FLAG_RETURN;
-                self.announce(format!("La bandera del {} ha caído", team_name(t as u8)), tone::NEUTRAL);
+                self.announce(if t as u8 == ALLIES { "La bandera aliada ha caído".to_string() } else { "La bandera del Eje ha caído".to_string() }, tone::NEUTRAL);
             }
         }
     }
@@ -1455,7 +1455,7 @@ impl Server {
                     self.flag_drop_t[t] -= dt;
                     if self.flag_drop_t[t] <= 0.0 {
                         self.flags[t] = FlagInfo { state: flag_state::HOME, carrier: 0, pos: self.world.flag_bases[t] };
-                        self.announce(format!("La bandera del {} vuelve a su base", team_name(t as u8)), tone::NEUTRAL);
+                        self.announce(if t as u8 == ALLIES { "La bandera aliada vuelve a su base".to_string() } else { "La bandera del Eje vuelve a su base".to_string() }, tone::NEUTRAL);
                     }
                 }
             }
@@ -1471,14 +1471,14 @@ impl Server {
             if (ef.state == flag_state::HOME || ef.state == flag_state::DROPPED) && ef.pos.dist_flat(pos) < FLAG_RADIUS {
                 self.flags[enemy] = FlagInfo { state: flag_state::CARRIED, carrier: id as u8, pos };
                 let tone = if team == 0 { tone::ALLIES } else { tone::AXIS };
-                self.announce(format!("¡{} tiene la bandera del {}!", name, team_name(enemy as u8)), tone);
+                self.announce(if enemy as u8 == ALLIES { format!("¡{name} tiene la bandera aliada!") } else { format!("¡{name} tiene la bandera del Eje!") }, tone);
             }
             let of = self.flags[team];
             if of.state == flag_state::DROPPED && of.pos.dist_flat(pos) < FLAG_RADIUS {
                 self.flags[team] = FlagInfo { state: flag_state::HOME, carrier: 0, pos: self.world.flag_bases[team] };
                 self.slots[id].as_mut().unwrap().score += 2;
                 self.give_xp(id, xp::OBJECTIVE / 2, xp_reason::OBJECTIVE);
-                self.announce(format!("{} devuelve la bandera de los {}", name, team_name(team as u8)), tone::NEUTRAL);
+                self.announce(if team as u8 == ALLIES { format!("{name} devuelve la bandera aliada") } else { format!("{name} devuelve la bandera del Eje") }, tone::NEUTRAL);
             }
             let ef = self.flags[enemy];
             if ef.state == flag_state::CARRIED
@@ -1491,7 +1491,7 @@ impl Server {
                 self.slots[id].as_mut().unwrap().score += 10;
                 self.give_xp(id, xp::OBJECTIVE, xp_reason::OBJECTIVE);
                 let tone = if team == 0 { tone::ALLIES } else { tone::AXIS };
-                self.announce(format!("¡{} captura la bandera! Punto para los {}", name, team_name(team as u8)), tone);
+                self.announce(if team as u8 == ALLIES { format!("¡{name} captura la bandera! Punto para los Aliados") } else { format!("¡{name} captura la bandera! Punto para el Eje") }, tone);
                 self.push(Ev::Whistle);
                 self.check_score_end();
             }
@@ -1579,9 +1579,9 @@ impl Server {
         let alive = |t: u8| self.slots.iter().flatten().filter(|s| s.team == t && s.alive).count();
         let (aa, da) = (alive(att), alive(def));
         if da == 0 {
-            self.end_round(att, &format!("Los {} han sido eliminados", team_name(def)));
+            self.end_round(att, if def == ALLIES { "Los Aliados han sido eliminados" } else { "El Eje ha sido eliminado" });
         } else if aa == 0 && self.bomb_state == bomb_state::NONE {
-            self.end_round(def, &format!("Los {} han sido eliminados", team_name(att)));
+            self.end_round(def, if att == ALLIES { "Los Aliados han sido eliminados" } else { "El Eje ha sido eliminado" });
         }
     }
 
@@ -2080,7 +2080,7 @@ impl Server {
                                 self.slots[i].as_mut().unwrap().score += 5;
                             }
                             let tone = if t == ALLIES { tone::ALLIES } else { tone::AXIS };
-                            self.announce(format!("Los {} han tomado el cuartel general", team_name(t)), tone);
+                            self.announce(if t == ALLIES { "Los Aliados han tomado el cuartel general".to_string() } else { "El Eje ha tomado el cuartel general".to_string() }, tone);
                         }
                     }
                     None if a == 0 && b == 0 => self.hq_progress = (self.hq_progress - dt / HQ_CAPTURE * 0.5).max(0.0),
@@ -2114,7 +2114,7 @@ impl Server {
                     self.hq_timer = 6.0;
                     self.hq_progress = 0.0;
                     let tone = if enemy == ALLIES { tone::ALLIES } else { tone::AXIS };
-                    self.announce(format!("¡Los {} han destruido el cuartel general enemigo!", team_name(enemy)), tone);
+                    self.announce(if enemy == ALLIES { "¡Los Aliados han destruido el cuartel general enemigo!".to_string() } else { "¡El Eje ha destruido el cuartel general enemigo!".to_string() }, tone);
                     self.push(Ev::Explosion { pos: self.hq_pos + V3::UP * 0.5, big: false });
                 } else if self.hq_timer <= 0.0 {
                     self.hq_state = hq_state::NONE;

@@ -5,6 +5,7 @@ pub mod bots;
 pub mod client;
 pub mod config;
 pub mod geo;
+pub mod lang;
 pub mod math;
 pub mod model;
 pub mod net;
