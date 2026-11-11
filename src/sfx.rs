@@ -4,7 +4,7 @@
 use crate::math::Rng;
 use std::f32::consts::TAU;
 
-pub const RATE: u32 = 22050;
+pub const RATE: u32 = 44100;
 
 pub fn to_wav(s: &[f32]) -> Vec<u8> {
     let data_len = (s.len() * 2) as u32;
@@ -60,34 +60,164 @@ fn normalize(mut v: Vec<f32>, peak: f32) -> Vec<f32> {
     v
 }
 
-fn gunshot(seed: u64, cutoff: f32, decay: f32, thump: f32, dur: f32, peak: f32) -> Vec<f32> {
-    let mut r = Rng::new(seed);
-    let mut lp = Lp::new(cutoff);
-    let mut lp2 = Lp::new(cutoff * 0.2);
-    normalize(
-        gen(dur, |t| {
-            let n = r.f() * 2.0 - 1.0;
-            let body = lp.run(n) * (-t / decay).exp();
-            let tail = lp2.run(n) * (-t / (decay * 3.0)).exp() * 1.8;
-            let th = (TAU * (75.0 - 35.0 * t) * t).sin() * (-t / 0.07).exp() * thump;
-            let attack = (t / 0.0015).min(1.0);
-            (body + tail + th) * attack
-        }),
-        peak,
-    )
+/// Filtro paso alto de un polo.
+struct Hp {
+    lp: Lp,
+}
+impl Hp {
+    fn new(cut: f32) -> Hp {
+        Hp { lp: Lp::new(cut) }
+    }
+    fn run(&mut self, x: f32) -> f32 {
+        x - self.lp.run(x)
+    }
 }
 
+/// Reverberación de Schroeder (peines con amortiguación y pasatodos): la cola
+/// que devuelven las casas y el campo abierto.
+fn reverb(dry: &[f32], extra: f32, size: f32, damp: f32, wet: f32) -> Vec<f32> {
+    let n = dry.len() + (extra * RATE as f32) as usize;
+    let mut out = vec![0.0f32; n];
+    let combs = [0.0297f32, 0.0371, 0.0411, 0.0437, 0.0533, 0.0617];
+    for (k, &d) in combs.iter().enumerate() {
+        let len = ((d * size) * RATE as f32) as usize;
+        let mut buf = vec![0.0f32; len.max(1)];
+        let mut idx = 0;
+        let mut f = 0.0f32;
+        let fb = 0.84 - 0.02 * k as f32;
+        for i in 0..n {
+            let x = dry.get(i).copied().unwrap_or(0.0);
+            let y = buf[idx];
+            f = y * (1.0 - damp) + f * damp;
+            buf[idx] = x + f * fb;
+            idx = (idx + 1) % buf.len();
+            out[i] += y / combs.len() as f32;
+        }
+    }
+    for &d in &[0.005f32, 0.0017] {
+        let len = (d * RATE as f32) as usize;
+        let mut buf = vec![0.0f32; len.max(1)];
+        let mut idx = 0;
+        for x in out.iter_mut() {
+            let b = buf[idx];
+            let y = -*x + b;
+            buf[idx] = *x + b * 0.5;
+            idx = (idx + 1) % buf.len();
+            *x = y;
+        }
+    }
+    for i in 0..n {
+        out[i] = dry.get(i).copied().unwrap_or(0.0) + out[i] * wet;
+    }
+    out
+}
+
+/// Receta de un disparo.
+struct Shot {
+    seed: u64,
+    /// Chasquido supersónico de la bala (0 en las balas subsónicas, como la .45)
+    crack: f32,
+    /// Grave del estampido en la boca del cañón (Hz) y su duración
+    boom_hz: f32,
+    boom_decay: f32,
+    /// Cuerpo de ruido del estampido: brillo y duración
+    body_cut: f32,
+    body_decay: f32,
+    /// Saturación (los tiros reales saturan micrófono y oído)
+    drive: f32,
+    /// Mecanismo: chasquido metálico del cierre al ciclar (0 = nada) y cuándo
+    mech: f32,
+    mech_at: f32,
+    /// Ecos y cola de reverberación
+    room: f32,
+    tail: f32,
+    /// Lejanía: 0 = al lado, 1 = muy lejos (sin agudos y casi todo eco)
+    far: f32,
+}
+
+fn gunshot(s: Shot) -> Vec<f32> {
+    let mut r = Rng::new(s.seed);
+    let mut crack_hp = Hp::new(3000.0);
+    let mut body_lp = Lp::new(s.body_cut);
+    let mut body_lp2 = Lp::new(s.body_cut * 0.25);
+    let mut mech_hp = Hp::new(1800.0);
+    let dry_len = 0.35f32.max(s.mech_at + 0.08);
+    let mut boom_phase = 0.0f32;
+    let mut dry = gen(dry_len, |t| {
+        let n = r.f() * 2.0 - 1.0;
+        // Chasquido: un clic de banda ancha de un milisegundo
+        let crack = crack_hp.run(n) * (-t / 0.0007).exp() * 3.0 * s.crack;
+        // Estampido: ruido grave y medio con ataque instantáneo
+        let atk = (t / 0.0004).min(1.0);
+        let body = (body_lp.run(n) * 1.4 * (-t / s.body_decay).exp() + body_lp2.run(n) * 2.2 * (-t / (s.body_decay * 2.2)).exp()) * atk;
+        // Golpe de presión: un seno que baja de tono
+        let f = s.boom_hz * (1.0 + 1.5 * (-t / 0.01).exp());
+        boom_phase += TAU * f / RATE as f32;
+        let boom = boom_phase.sin() * (-t / s.boom_decay).exp() * 1.3 * atk;
+        let mut x = crack + body + boom;
+        x = (x * s.drive).tanh() / s.drive.tanh();
+        // Mecanismo: dos golpecitos metálicos
+        if s.mech > 0.0 {
+            for (dt, g) in [(0.0f32, 1.0f32), (0.022, 0.6)] {
+                let u = t - s.mech_at - dt;
+                if u >= 0.0 {
+                    let ring = ((TAU * 3100.0 * u).sin() + 0.6 * (TAU * 4700.0 * u).sin()) * (-u / 0.012).exp();
+                    x += (mech_hp.run(n) * 0.6 + ring * 0.4) * (-u / 0.01).exp() * s.mech * g * 0.25;
+                }
+            }
+        }
+        x
+    });
+    // Lejanía: el aire se come los agudos
+    if s.far > 0.0 {
+        let mut lp = Lp::new(lerp_f(6000.0, 700.0, s.far));
+        let mut lp2 = Lp::new(lerp_f(9000.0, 1100.0, s.far));
+        for x in dry.iter_mut() {
+            *x = lp2.run(lp.run(*x));
+        }
+    }
+    // Primeros rebotes en las fachadas (cada vez más apagados)
+    let mut v = dry.clone();
+    v.resize(dry.len() + (0.5 * RATE as f32) as usize, 0.0);
+    let echoes = [(0.043f32, 0.32f32), (0.071, 0.22), (0.118, 0.2), (0.19, 0.14), (0.27, 0.1), (0.38, 0.07)];
+    for (k, &(d, g)) in echoes.iter().enumerate() {
+        let o = (d * RATE as f32) as usize;
+        let mut lp = Lp::new(3500.0 / (1.0 + k as f32 * 0.7));
+        for i in 0..dry.len() {
+            if i + o < v.len() {
+                v[i + o] += lp.run(dry[i]) * g * s.room * (1.0 + s.far);
+            }
+        }
+    }
+    let wet = s.room * (0.5 + 1.5 * s.far);
+    let mut out = reverb(&v, s.tail, 1.0 + 0.6 * s.far, 0.35 + 0.3 * s.far, wet);
+    // Fundido final suave para que no corte
+    let n = out.len();
+    let fade = (0.15 * RATE as f32) as usize;
+    for i in 0..fade.min(n) {
+        out[n - 1 - i] *= i as f32 / fade as f32;
+    }
+    normalize(out, 0.95)
+}
+
+fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// Fusil semiautomático (M1 Garand): estampido pleno y el cierre que cicla.
 pub fn rifle() -> Vec<f32> {
-    gunshot(1, 5500.0, 0.05, 0.9, 0.75, 0.95)
+    gunshot(Shot { seed: 1, crack: 1.0, boom_hz: 75.0, boom_decay: 0.05, body_cut: 4200.0, body_decay: 0.045, drive: 3.0, mech: 1.0, mech_at: 0.045, room: 0.55, tail: 1.1, far: 0.0 })
 }
+/// Subfusil Thompson: bala subsónica (.45), golpe grave y corto, sin chasquido.
 pub fn smg() -> Vec<f32> {
-    gunshot(2, 4500.0, 0.03, 0.6, 0.32, 0.8)
+    gunshot(Shot { seed: 2, crack: 0.15, boom_hz: 105.0, boom_decay: 0.03, body_cut: 3200.0, body_decay: 0.028, drive: 2.5, mech: 0.6, mech_at: 0.03, room: 0.45, tail: 0.55, far: 0.0 })
 }
+/// Disparos lejanos: casi todo eco, sin agudos.
 pub fn enemy_rifle() -> Vec<f32> {
-    gunshot(3, 1700.0, 0.08, 0.5, 0.9, 0.85)
+    gunshot(Shot { seed: 3, crack: 0.6, boom_hz: 70.0, boom_decay: 0.06, body_cut: 3500.0, body_decay: 0.05, drive: 2.0, mech: 0.0, mech_at: 0.0, room: 0.7, tail: 1.6, far: 0.75 })
 }
 pub fn enemy_smg() -> Vec<f32> {
-    gunshot(4, 2000.0, 0.035, 0.4, 0.35, 0.7)
+    gunshot(Shot { seed: 4, crack: 0.2, boom_hz: 100.0, boom_decay: 0.035, body_cut: 3000.0, body_decay: 0.03, drive: 2.0, mech: 0.0, mech_at: 0.0, room: 0.6, tail: 0.9, far: 0.7 })
 }
 
 pub fn explosion() -> Vec<f32> {
@@ -236,11 +366,13 @@ pub fn whistle() -> Vec<f32> {
     )
 }
 
+/// Fusil de cerrojo (Kar98k, Mosin, Lee-Enfield): el estampido más seco y potente.
 pub fn kar98k() -> Vec<f32> {
-    gunshot(13, 4800.0, 0.06, 1.0, 0.9, 1.0)
+    gunshot(Shot { seed: 13, crack: 1.2, boom_hz: 68.0, boom_decay: 0.06, body_cut: 4600.0, body_decay: 0.05, drive: 3.5, mech: 0.0, mech_at: 0.0, room: 0.6, tail: 1.3, far: 0.0 })
 }
+/// Subfusil de 9 mm (MP40, Sten): más agudo y seco que la Thompson.
 pub fn mp40() -> Vec<f32> {
-    gunshot(14, 3900.0, 0.03, 0.55, 0.3, 0.78)
+    gunshot(Shot { seed: 14, crack: 0.45, boom_hz: 120.0, boom_decay: 0.025, body_cut: 4200.0, body_decay: 0.024, drive: 2.6, mech: 0.7, mech_at: 0.025, room: 0.45, tail: 0.5, far: 0.0 })
 }
 /// Cerrojo del Kar98k tras el disparo.
 pub fn bolt() -> Vec<f32> {
@@ -248,20 +380,15 @@ pub fn bolt() -> Vec<f32> {
 }
 
 pub fn pistol() -> Vec<f32> {
-    gunshot(11, 6500.0, 0.025, 0.4, 0.4, 0.75)
+    gunshot(Shot { seed: 11, crack: 0.4, boom_hz: 140.0, boom_decay: 0.022, body_cut: 5000.0, body_decay: 0.02, drive: 2.4, mech: 0.8, mech_at: 0.02, room: 0.5, tail: 0.7, far: 0.0 })
 }
 /// Ametralladora ligera: más grave y con más cola que un subfusil.
 pub fn lmg() -> Vec<f32> {
-    gunshot(12, 3600.0, 0.045, 1.0, 0.5, 0.9)
+    gunshot(Shot { seed: 12, crack: 1.0, boom_hz: 72.0, boom_decay: 0.045, body_cut: 3800.0, body_decay: 0.04, drive: 3.2, mech: 0.7, mech_at: 0.035, room: 0.5, tail: 0.7, far: 0.0 })
 }
 /// Fusil de francotirador: un estampido largo que rebota en el valle.
 pub fn sniper() -> Vec<f32> {
-    let mut v = gunshot(13, 6000.0, 0.06, 1.1, 1.4, 0.95);
-    let echo = (0.32 * RATE as f32) as usize;
-    for i in (echo..v.len()).rev() {
-        v[i] += v[i - echo] * 0.3;
-    }
-    normalize(v, 0.95)
+    gunshot(Shot { seed: 15, crack: 1.3, boom_hz: 64.0, boom_decay: 0.07, body_cut: 4800.0, body_decay: 0.055, drive: 3.6, mech: 0.0, mech_at: 0.0, room: 0.85, tail: 2.2, far: 0.1 })
 }
 
 /// Latido (cuando la salud está muy baja).
