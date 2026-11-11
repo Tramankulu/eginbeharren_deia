@@ -69,6 +69,8 @@ pub const HQ_RADIUS: f32 = 4.0;
 /// Lo que dura una nube de humo (segundos) y su radio
 pub const SMOKE_TIME: f32 = 24.0;
 pub const SMOKE_RADIUS: f32 = 5.5;
+/// Lo que tarda en desaparecer un arma tirada
+pub const DROP_TIME: f32 = 40.0;
 pub const HQ_CAPTURE: f32 = 8.0;
 pub const HQ_DESTROY: f32 = 8.0;
 pub const HQ_HOLD: f32 = 90.0;
@@ -179,6 +181,9 @@ pub struct Server {
     bot_check: f32,
     /// Nubes de humo: (posición, edad en segundos)
     pub smokes: Vec<(V3, f32)>,
+    /// Armas en el suelo: (información, munición en cargador, en reserva, tiempo que les queda)
+    pub drops: Vec<(DropInfo, u32, u32, f32)>,
+    next_drop: u16,
 }
 
 impl Server {
@@ -228,6 +233,8 @@ impl Server {
             recent_shots: Vec::new(),
             bot_check: 0.0,
             smokes: Vec::new(),
+            drops: Vec::new(),
+            next_drop: 1,
             cfg,
         };
         s.hq_spots = hq_spots(&s.world);
@@ -653,6 +660,16 @@ impl Server {
             s.use_held = true;
             return;
         }
+        // F junto a un arma del suelo (y lejos de las ametralladoras): cogerla
+        let near_turret = {
+            let p = self.slots[id].as_ref().unwrap().ps.pos;
+            self.world.turrets.iter().any(|t| t.stand.dist_flat(p) < MOUNT_RANGE)
+        };
+        if pressed_use && !near_turret && self.pickup_weapon(id) {
+            let s = self.slots[id].as_mut().unwrap();
+            s.use_held = true;
+            return;
+        }
         // Una ametralladora montada solo la puede usar uno
         let mut cmd = *cmd;
         if cmd.has(btn::MOUNT) {
@@ -854,8 +871,103 @@ impl Server {
         }
     }
 
+    /// Deja en el suelo un arma con su munición.
+    fn drop_gun(&mut self, pos: V3, yaw: f32, gun: u8, mag: u32, reserve: u32) {
+        if matches!(crate::sim::gun(gun).kind, GunKind::Mounted | GunKind::Melee) || mag + reserve == 0 {
+            return;
+        }
+        let id = self.next_drop;
+        self.next_drop = self.next_drop.wrapping_add(1).max(1);
+        let p = v3(pos.x, (pos.y).max(0.0) + 0.06, pos.z);
+        self.drops.push((DropInfo { id, pos: p, yaw, gun }, mag, reserve, DROP_TIME));
+        while self.drops.len() > 32 {
+            self.drops.remove(0);
+        }
+    }
+
+    /// Munición del suelo al pasar por encima (si es de un arma que se lleva)
+    /// y cambio de arma con F.
+    fn update_drops(&mut self, dt: f32) {
+        for d in self.drops.iter_mut() {
+            d.3 -= dt;
+        }
+        self.drops.retain(|d| d.3 > 0.0);
+        let mut k = 0;
+        while k < self.drops.len() {
+            let (info, mag, reserve, _) = self.drops[k];
+            let mut taken = None;
+            for (i, s) in self.slots.iter_mut().enumerate() {
+                let Some(s) = s else { continue };
+                if !s.alive || s.zombie || s.ps.pos.dist_flat(info.pos) > 1.0 || (s.ps.pos.y - info.pos.y).abs() > 1.2 {
+                    continue;
+                }
+                for slot in 0..2 {
+                    if s.ps.guns[slot] != info.gun {
+                        continue;
+                    }
+                    let def = crate::sim::gun(info.gun);
+                    let cap = def.start_reserve * 2;
+                    let a = &mut s.ps.ammo[slot];
+                    if a.reserve < cap {
+                        a.reserve = (a.reserve + mag + reserve).min(cap);
+                        taken = Some(i);
+                    }
+                    break;
+                }
+                if taken.is_some() {
+                    break;
+                }
+            }
+            if let Some(i) = taken {
+                self.push(Ev::Pickup { who: i as u8, pos: info.pos, gun: info.gun, weapon: false });
+                self.drops.remove(k);
+            } else {
+                k += 1;
+            }
+        }
+    }
+
+    /// Cambia el arma en la mano por la del suelo más cercana.
+    fn pickup_weapon(&mut self, id: usize) -> bool {
+        let Some(s) = self.slots[id].as_ref() else { return false };
+        if s.zombie || s.ps.busy || s.ps.is_mounted() {
+            return false;
+        }
+        let pos = s.ps.pos;
+        let Some(k) = self
+            .drops
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.0.pos.dist_flat(pos) < 1.4 && !s.ps.guns.contains(&d.0.gun))
+            .min_by(|a, b| a.1 .0.pos.dist_flat(pos).partial_cmp(&b.1 .0.pos.dist_flat(pos)).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(k, _)| k)
+        else {
+            return false;
+        };
+        let (info, mag, reserve, _) = self.drops.remove(k);
+        let s = self.slots[id].as_mut().unwrap();
+        let slot = (s.ps.slot as usize).min(1);
+        let old = (s.ps.guns[slot], s.ps.ammo[slot]);
+        s.ps.guns[slot] = info.gun;
+        s.ps.ammo[slot] = Ammo { mag, reserve };
+        s.ps.reload_t = 0.0;
+        s.ps.switch_t = 0.5;
+        let (p, yaw) = (s.ps.pos, s.ps.yaw);
+        self.drop_gun(p + V3::from_yaw(yaw) * 0.3, yaw, old.0, old.1.mag, old.1.reserve);
+        self.push(Ev::Pickup { who: id as u8, pos: info.pos, gun: info.gun, weapon: true });
+        true
+    }
+
     fn kill(&mut self, victim: usize, attacker: Option<usize>, weapon: u8, head: bool) {
         self.drop_flag(victim);
+        // El caído deja el arma que llevaba en la mano, con su munición
+        if let Some(v) = self.slots[victim].as_ref() {
+            if !v.zombie && v.alive {
+                let slot = (v.ps.slot as usize).min(1);
+                let (pos, yaw, g, a) = (v.ps.pos, v.ps.yaw, v.ps.guns[slot], v.ps.ammo[slot]);
+                self.drop_gun(pos, yaw, g, a.mag, a.reserve);
+            }
+        }
         let counting = self.phase == Phase::Playing;
         let vt = self.slots[victim].as_ref().map(|v| v.team).unwrap_or(0);
         let delay = self.respawn_delay(vt);
@@ -1030,6 +1142,7 @@ impl Server {
         self.zombies_to_spawn = 0;
         self.wave_break = 0.0;
         self.smokes.clear();
+        self.drops.clear();
         self.team_scores = [0, 0];
         self.round = 0;
         self.grenades.clear();
@@ -1111,6 +1224,7 @@ impl Server {
 
     fn start_round(&mut self) {
         self.round += 1;
+        self.drops.clear();
         if self.round == 4 {
             self.announce("Descanso: los equipos cambian de papel", tone::NEUTRAL);
         }
@@ -1549,6 +1663,7 @@ impl Server {
         self.recent_shots.retain(|s| tick_age(s.2, self.tick) < TICK_HZ);
 
         self.update_grenades(dt);
+        self.update_drops(dt);
         self.update_mode(dt);
 
         let tick = self.tick;
@@ -1639,6 +1754,7 @@ impl Server {
                 players: players.clone(),
                 grenades: grenades.clone(),
                 smokes: self.smokes.clone(),
+                drops: self.drops.iter().map(|d| d.0).collect(),
                 events,
             };
             let mut w = W::new(s2c::SNAPSHOT);

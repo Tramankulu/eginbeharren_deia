@@ -206,3 +206,23 @@ fn los_bots_no_disparan_desde_lejos_con_subfusil() {
     assert!(shots > 50);
     assert!(far * 20 < shots, "demasiados disparos de subfusil a distancia");
 }
+
+#[test]
+fn los_caidos_dejan_su_arma() {
+    let mut s = server(vec![Mode::Tdm], 10, Some(200));
+    let mut most = 0;
+    let mut picked = false;
+    let mut prev: Vec<u16> = Vec::new();
+    for _ in 0..(3 * 60 * TICK_HZ) {
+        s.update();
+        most = most.max(s.drops.len());
+        let ids: Vec<u16> = s.drops.iter().map(|d| d.0.id).collect();
+        // Alguna desaparece antes de caducar: alguien ha cogido su munición
+        if prev.iter().any(|id| !ids.contains(id)) && s.drops.iter().all(|d| d.3 > 1.0) {
+            picked = true;
+        }
+        prev = ids;
+    }
+    println!("armas en el suelo: hasta {most}, recogida alguna: {picked}");
+    assert!(most >= 3);
+}

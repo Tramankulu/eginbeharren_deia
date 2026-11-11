@@ -3,7 +3,7 @@
 use crate::math::*;
 use crate::sim::{Ammo, Cmd, PState};
 
-pub const PROTOCOL: u16 = 3;
+pub const PROTOCOL: u16 = 4;
 pub const DEFAULT_PORT: u16 = 28960;
 pub const MAGIC: [u8; 2] = *b"ED";
 /// Una instantánea cada 3 ticks = 20 por segundo.
@@ -313,6 +313,8 @@ pub enum Ev {
     Melee { who: u8, pos: V3, hit: bool },
     /// Una granada de humo empieza a echar humo
     Smoke { pos: V3 },
+    /// Alguien coge un arma o munición del suelo
+    Pickup { who: u8, pos: V3, gun: u8, weapon: bool },
 }
 
 pub mod tone {
@@ -409,6 +411,13 @@ impl Ev {
                 w.u8(15);
                 w.v3(*pos);
             }
+            Ev::Pickup { who, pos, gun, weapon } => {
+                w.u8(16);
+                w.u8(*who);
+                w.v3(*pos);
+                w.u8(*gun);
+                w.bool(*weapon);
+            }
         }
     }
     pub fn read(r: &mut R) -> Option<Ev> {
@@ -436,6 +445,7 @@ impl Ev {
             13 => Ev::Growl { who: r.u8()?, pos: r.v3()?, attack: r.bool()? },
             14 => Ev::Melee { who: r.u8()?, pos: r.v3()?, hit: r.bool()? },
             15 => Ev::Smoke { pos: r.v3()? },
+            16 => Ev::Pickup { who: r.u8()?, pos: r.v3()?, gun: r.u8()?, weapon: r.bool()? },
             _ => return None,
         })
     }
@@ -717,7 +727,18 @@ pub struct Snapshot {
     pub grenades: Vec<GrenadeInfo>,
     /// Nubes de humo: (posición, segundos desde que empezaron)
     pub smokes: Vec<(V3, f32)>,
+    /// Armas tiradas en el suelo
+    pub drops: Vec<DropInfo>,
     pub events: Vec<(u32, Ev)>,
+}
+
+/// Arma que ha dejado un caído.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropInfo {
+    pub id: u16,
+    pub pos: V3,
+    pub yaw: f32,
+    pub gun: u8,
 }
 
 /// Información pública que un servidor anuncia en la red local.
@@ -787,6 +808,13 @@ impl Snapshot {
             w.v3(*p);
             w.f32(*t);
         }
+        w.u8(self.drops.len().min(32) as u8);
+        for d in self.drops.iter().take(32) {
+            w.u16(d.id);
+            w.v3(d.pos);
+            w.angle(d.yaw);
+            w.u8(d.gun);
+        }
         // Eventos: contador al final, se rellena según el espacio
         let count_at = w.len();
         w.u8(0);
@@ -851,6 +879,11 @@ impl Snapshot {
         for _ in 0..ns {
             smokes.push((r.v3()?, r.f32()?));
         }
+        let nd = r.u8()? as usize;
+        let mut drops = Vec::with_capacity(nd);
+        for _ in 0..nd {
+            drops.push(DropInfo { id: r.u16()?, pos: r.v3()?, yaw: r.angle()?, gun: r.u8()? });
+        }
         let ne = r.u8()? as usize;
         let mut events = Vec::with_capacity(ne);
         for _ in 0..ne {
@@ -887,6 +920,7 @@ impl Snapshot {
             players,
             grenades,
             smokes,
+            drops,
             events,
         })
     }

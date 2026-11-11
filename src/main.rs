@@ -789,7 +789,7 @@ fn stepper(x: f32, y: f32, label: &str, value: &str) -> i32 {
 // Aplicación
 // ----------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 enum Screen {
     Main,
     Join,
@@ -1355,9 +1355,10 @@ impl App {
         }
         // Al entrar, elegir equipamiento
         if !self.loadout_shown && self.client.as_ref().map(|c| c.snap.is_some()).unwrap_or(false) && self.demo_step == 0 {
+            // No se abre solo (en algunos equipos dejaba el ratón atrapado):
+            // se avisa de que con L se eligen las armas
             self.loadout_shown = true;
-            self.loadout_menu = true;
-            self.grab(false);
+            self.announces.push(("Pulsa L para elegir tus armas y tu ventaja".to_string(), tone::ALERT, 9.0));
         }
 
         let ads = self.client.as_ref().and_then(|c| c.pred.as_ref().map(|p| p.ads)).unwrap_or(0.0);
@@ -1595,6 +1596,15 @@ impl App {
                         self.sounds.play_at(&self.sounds.bash, 0.8 * near(*pos, 25.0), *pos, ear, yaw);
                     } else if *who != me {
                         self.sounds.play(&self.sounds.swing, 0.4 * near(*pos, 12.0));
+                    }
+                }
+                Ev::Pickup { who, pos, gun: g, weapon } => {
+                    if *who == me {
+                        self.sounds.play(&self.sounds.switch, 0.6);
+                        let t = if *weapon { format!("Has cogido un {}", gun(*g).name) } else { format!("Munición de {}", gun(*g).name) };
+                        self.xp_pops.push((t, 2.0));
+                    } else {
+                        self.sounds.play_at(&self.sounds.impact, 0.2 * near(*pos, 15.0), *pos, ear, yaw);
                     }
                 }
                 Ev::Smoke { pos } => {
@@ -1920,6 +1930,12 @@ impl App {
                 }
             }
         }
+        if let Some(s) = snap {
+            for d in &s.drops {
+                dg.sun = sun_vis(&self.world, d.pos + V3::UP * 0.3);
+                geo::dropped_gun(&mut dg, d.pos, d.yaw, d.gun);
+            }
+        }
         dg.sun = 1.0;
         for g in c.grenades() {
             geo::grenade_of(&mut dg, g.pos, self.clock * 8.0 + g.id as f32, g.nation, g.smoke);
@@ -2177,6 +2193,12 @@ impl App {
                 let near_turret = self.world.turrets.iter().enumerate().find(|(k, t)| {
                     t.stand.dist_flat(p.pos) < MOUNT_RANGE && !c.remotes().iter().any(|o| o.alive && o.mounted as usize == *k)
                 });
+                // Arma en el suelo
+                if near_turret.is_none() {
+                    if let Some(d) = s.drops.iter().filter(|d| d.pos.dist_flat(p.pos) < 1.4 && !p.guns.contains(&d.gun)).min_by(|a, b| a.pos.dist_flat(p.pos).partial_cmp(&b.pos.dist_flat(p.pos)).unwrap()) {
+                        txt_c(&format!("Pulsa F para cambiar tu {} por el {}", p.gun().name, gun(d.gun).name), cx, cy + 150.0, 22.0, GOLD);
+                    }
+                }
                 if let Some((_, t)) = near_turret {
                     let nat = if t.side == 1 { nation::DE } else { s.allied_nation };
                     txt_c(&format!("Pulsa F para usar la {}", gun(mounted_gun(nat)).name), cx, cy + 150.0, 22.0, GOLD);
@@ -2593,9 +2615,6 @@ impl App {
 
     /// Clase, arma principal y ventaja; las bloqueadas muestran el nivel necesario.
     fn draw_loadout_menu(&mut self) {
-        // El ratón tiene que verse y moverse libre mientras el menú está abierto
-        set_cursor_grab(false);
-        show_mouse(true);
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let w = 1000.0f32.min(sw - 30.0);
@@ -3078,8 +3097,27 @@ impl App {
     }
 }
 
+/// Anota en `registro.txt` (en la carpeta de ajustes) lo que pueda servir
+/// para averiguar un fallo: errores, cuadros que tardan mucho…
+fn log_line(text: &str) {
+    eprintln!("{text}");
+    if let Some(d) = deia::config::config_dir() {
+        let _ = std::fs::create_dir_all(&d);
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("registro.txt")) {
+            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let _ = writeln!(f, "[{t}] v{} {text}", env!("CARGO_PKG_VERSION"));
+        }
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
+    // Cualquier error grave (también del servidor en su hilo) queda en el registro
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current().name().unwrap_or("principal").to_string();
+        log_line(&format!("ERROR en el hilo «{thread}»: {info}"));
+    }));
     load_fonts();
     // Pantalla de carga mientras se prepara el escenario
     for _ in 0..2 {
@@ -3114,7 +3152,12 @@ async fn main() {
         if let Some(d) = demo.as_mut() {
             app.demo_step = d.step;
         }
+        let ft0 = get_time();
         app.frame();
+        let ft = get_time() - ft0;
+        if ft > 1.0 && demo.is_none() {
+            log_line(&format!("Cuadro lento: {:.0} ms en {:?}", ft * 1000.0, app.screen));
+        }
         if let Some(mut d) = demo.take() {
             let dt = get_frame_time().min(0.1);
             if app.demo_frame(&mut d, dt) {

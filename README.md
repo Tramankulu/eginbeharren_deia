@@ -104,7 +104,7 @@ cuando entra una persona.
 
 El Eje es siempre Alemania; los Aliados pueden ser estadounidenses, británicos o soviéticos
 (se elige al crear la partida), cada uno con su uniforme, su casco y sus armas. Con la tecla **L**
-(se abre sola al entrar) eliges arma principal, arma secundaria (la pistola u otra arma de tu
+eliges arma principal, arma secundaria (la pistola u otra arma de tu
 nación) y ventaja. Si aún no has combatido desde que apareciste, el cambio es inmediato.
 
 | Clase | Estados Unidos | Reino Unido | Unión Soviética | Alemania |
@@ -120,6 +120,10 @@ nación) y ventaja. Si aún no has combatido desde que apareciste, el cambio es 
 **F** para usarla (y otra vez F o salta para soltarla): gira hasta unos 60° a cada lado, no se
 acaba la munición pero el cañón se recalienta si disparas demasiado seguido. En los escenarios de
 Blender se colocan con objetos llamados `AMETRALLADORA_ALIADOS` o `AMETRALLADORA_EJE`.
+
+**Armas en el suelo:** quien cae deja el arma que llevaba en la mano con su munición. Pasando
+por encima de un arma igual a una de las tuyas coges su munición; con **F** cambias el arma que
+llevas en la mano por la del suelo (y dejas la tuya).
 
 **Granadas:** cada nación tiene la suya (Mk 2, Mills, RG-42 y la de mango alemana), y todos llevan
 además una **granada de humo** (tecla **H**) que tapa la vista durante 24 s, también a los bots.

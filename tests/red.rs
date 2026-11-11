@@ -142,6 +142,7 @@ fn serializacion_ida_y_vuelta() {
         }],
         grenades: vec![GrenadeInfo { id: 9, pos: v3(1.0, 1.0, 1.0), side: 0, nation: 2, smoke: true }],
         smokes: vec![(v3(4.0, 0.0, 4.0), 3.5)],
+        drops: vec![DropInfo { id: 3, pos: v3(1.0, 0.1, 2.0), yaw: 0.5, gun: 8 }],
         events: vec![
             (5, Ev::Kill { killer: 1, victim: 2, weapon: 3, head: true, killer_name: "a".into(), victim_name: "b".into() }),
             (6, Ev::Chat { from: 1, team_only: false, name: "a".into(), text: "¡hola!".into() }),

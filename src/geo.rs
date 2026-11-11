@@ -2374,3 +2374,36 @@ pub fn grenade_of(g: &mut Geo, pos: V3, spin: f32, nation: u8, smoke: bool) {
         _ => grenade(g, pos, spin, true),
     }
 }
+
+
+/// Arma tirada en el suelo.
+pub fn dropped_gun(g: &mut Geo, pos: V3, yaw: f32, gun: u8) {
+    use crate::sim::GunKind as K;
+    let d = crate::sim::gun(gun);
+    let f = V3::from_yaw(yaw + 0.6);
+    let r = V3::right_of_yaw(yaw + 0.6);
+    let ax = [r, V3::UP, f];
+    let wood = [0.54, 0.35, 0.20, 1.0];
+    let metal = [0.22, 0.23, 0.25, 1.0];
+    let at = |x: f32, z: f32| pos + r * x + f * z + V3::UP * 0.03;
+    let (len, woody) = match d.kind {
+        K::Pistol => (0.2, false),
+        K::Smg => (0.65, d.name != "MP40" && d.name != "Sten"),
+        K::Support => (1.1, d.name != "StG 44"),
+        _ => (1.1, true),
+    };
+    if woody {
+        g.set(m::WOOD);
+        g.obox(at(0.0, -len * 0.25), ax, [0.03, 0.03, len * 0.28], wood);
+    }
+    g.set(m::METAL);
+    g.obox(at(0.0, len * 0.15), ax, [0.022, 0.025, len * 0.25], metal);
+    g.obox(at(0.0, len * 0.42), ax, [0.01, 0.01, len * 0.12], metal);
+    if matches!(d.kind, K::Smg | K::Support) {
+        g.obox(at(0.06, len * 0.1), ax, [0.05, 0.012, 0.02], metal);
+    }
+    if d.kind == K::Sniper {
+        g.cylinder(at(0.0, -0.05) + V3::UP * 0.05, at(0.0, 0.2) + V3::UP * 0.05, 0.02, 0.02, 8, metal, true);
+    }
+    g.set(m::PLAIN);
+}
