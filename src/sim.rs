@@ -340,19 +340,30 @@ impl Loadout {
         (0..GUNS.len() as u8).filter(|&g| GUNS[g as usize].nation == nat && GUNS[g as usize].kind == GunKind::Pistol).collect()
     }
     /// Armas (principal, pistola) y granadas para una nación.
+    /// Todas las armas que puede llevar un soldado de una nación (sin las montadas).
+    pub fn carryable(nat: u8) -> Vec<u8> {
+        (0..GUNS.len() as u8).filter(|&g| GUNS[g as usize].nation == nat && !matches!(GUNS[g as usize].kind, GunKind::Mounted | GunKind::Melee)).collect()
+    }
+
+    /// Armas (principal y secundaria) y granadas para una nación. La principal
+    /// puede ser cualquier arma de la nación salvo una pistola; la secundaria,
+    /// cualquiera distinta de la principal (por defecto, la pistola).
     pub fn resolve(&self, nat: u8) -> ([u8; 2], u8) {
         if nat == nation::ZOMBIE {
             return ([CLAWS, CLAWS], 0);
         }
-        let opts = Loadout::options(self.class, nat);
-        let primary = if opts.contains(&self.primary) { self.primary } else { opts.first().copied().unwrap_or(nation_gun(nat, GunKind::Rifle)) };
-        let pistols = Loadout::pistols(nat);
-        let pistol = if pistols.contains(&self.secondary) { self.secondary } else { nation_gun(nat, GunKind::Pistol) };
-        let mut g = CLASSES[(self.class as usize).min(CLASSES.len() - 1)].grenades;
+        let all = Loadout::carryable(nat);
+        let primary = if all.contains(&self.primary) && gun(self.primary).kind != GunKind::Pistol {
+            self.primary
+        } else {
+            Loadout::options(self.class, nat).first().copied().unwrap_or(nation_gun(nat, GunKind::Rifle))
+        };
+        let secondary = if all.contains(&self.secondary) && self.secondary != primary { self.secondary } else { nation_gun(nat, GunKind::Pistol) };
+        let mut g = if matches!(gun(primary).kind, GunKind::Support | GunKind::Sniper) { 1 } else { 2 };
         if self.perk == perk::GRENADIER {
             g += 1;
         }
-        ([primary, pistol], g)
+        ([primary, secondary], g)
     }
 }
 

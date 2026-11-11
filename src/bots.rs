@@ -223,10 +223,11 @@ impl Brain {
         let fwd = V3::from_yaw_pitch(self.yaw, self.pitch);
         let def_now = ps.gun();
         let max_d = match def_now.kind {
-            GunKind::Smg | GunKind::Pistol => 55.0,
-            GunKind::Sniper => 140.0,
-            GunKind::Mounted => 110.0,
-            _ => 90.0,
+            GunKind::Pistol => 25.0,
+            GunKind::Smg => 38.0,
+            GunKind::Sniper => 100.0,
+            GunKind::Support | GunKind::Mounted => 55.0,
+            _ => 60.0,
         };
         let mut best: Option<(u8, f32, V3, f32)> = None;
         for p in v.players.iter().filter(|p| is_enemy(p)) {
@@ -247,7 +248,7 @@ impl Brain {
             }
             let shooting = v.shots.iter().any(|s| s.0 == p.id);
             let ease = (vis as f32 / 3.0)
-                * (1.7 - d / 45.0).clamp(0.12, 1.6)
+                * (1.5 - d / 32.0).clamp(0.06, 1.5)
                 * (0.55 + 0.45 * p.moving.max(if shooting { 1.0 } else { 0.0 }) + if shooting { 0.8 } else { 0.0 })
                 * lerp(1.0, 0.6, p.crouch);
             // Preferir al más cercano y al que ya teníamos

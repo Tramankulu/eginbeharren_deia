@@ -103,9 +103,9 @@ cuando entra una persona.
 ### Naciones, clases y armas
 
 El Eje es siempre Alemania; los Aliados pueden ser estadounidenses, británicos o soviéticos
-(se elige al crear la partida), cada uno con su uniforme, su casco y sus armas. Antes de
-aparecer (tecla **L**) eliges clase, arma principal y ventaja; la pistola de tu nación va
-siempre de secundaria.
+(se elige al crear la partida), cada uno con su uniforme, su casco y sus armas. Con la tecla **L**
+(se abre sola al entrar) eliges arma principal, arma secundaria (la pistola u otra arma de tu
+nación) y ventaja. Si aún no has combatido desde que apareciste, el cambio es inmediato.
 
 | Clase | Estados Unidos | Reino Unido | Unión Soviética | Alemania |
 |---|---|---|---|---|

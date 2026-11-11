@@ -126,6 +126,9 @@ pub struct Slot {
     pub zombie: bool,
     /// Pausa entre zarpazos (zombis)
     pub melee_cd: f32,
+    /// Recién aparecido y sin haber combatido: un cambio de equipamiento se
+    /// aplica al momento (como al elegir arma antes de salir)
+    pub fresh: f32,
 }
 
 impl Slot {
@@ -457,6 +460,7 @@ impl Server {
             bot: None,
             zombie: false,
             melee_cd: 0.0,
+            fresh: 0.0,
             addr,
             name: name.clone(),
             team,
@@ -537,8 +541,16 @@ impl Server {
             return;
         };
         {
+            let nat = self.slots[id].as_ref().map(|s| s.ps.nation).unwrap_or(0);
             let s = self.slots[id].as_mut().unwrap();
-            s.loadout = Loadout { class: class.min(CLASSES.len() as u8 - 1), primary, perk: perk_id.min(perk::COUNT - 1), secondary };
+            let new = Loadout { class: class.min(CLASSES.len() as u8 - 1), primary, perk: perk_id.min(perk::COUNT - 1), secondary };
+            if new != s.loadout && s.alive && s.fresh > 0.0 && !s.ps.is_mounted() {
+                // Aún no ha entrado en combate: cambiar de armas ya
+                let (pos, yaw, pitch) = (s.ps.pos, s.ps.yaw, s.ps.pitch);
+                s.ps = PState::equip(pos, yaw, s.ps.side, nat, &new);
+                s.ps.pitch = pitch;
+            }
+            s.loadout = new;
             s.level = level.clamp(1, 20);
         }
         let chat = if chat_id != 0 {
@@ -667,6 +679,11 @@ impl Server {
         };
         let s = self.slots[id].as_ref().unwrap();
         let (pos, side, gun_id, nat) = (s.ps.pos, s.ps.side, s.ps.gun_id(), s.ps.nation);
+        if out.shot.is_some() || out.throw.is_some() || out.melee.is_some() {
+            if let Some(s) = self.slots[id].as_mut() {
+                s.fresh = 0.0;
+            }
+        }
         if let Some((eye, dir)) = out.shot {
             self.recent_shots.push((id as u8, eye, self.tick));
             self.fire(id, eye, dir, cmd.view_tick, gun_id);
@@ -814,6 +831,7 @@ impl Server {
         let dmg = if v.ps.perk == perk::TOUGH && (weapon as usize) < GUNS.len() { dmg * 0.8 } else { dmg };
         v.health -= dmg;
         v.since_hit = 0.0;
+        v.fresh = 0.0;
         self.push(Ev::Hurt { victim: victim as u8, from });
         if self.slots[victim].as_ref().unwrap().health <= 0.0 {
             self.kill(victim, attacker, weapon, head);
@@ -908,6 +926,7 @@ impl Server {
         let s = self.slots[id].as_mut().unwrap();
         s.ps = PState::equip(pos, yaw, side, if s.zombie { nation::ZOMBIE } else { nat }, &s.loadout);
         s.alive = true;
+        s.fresh = 12.0;
         s.health = if s.zombie { zhealth } else { MAX_HEALTH };
         s.since_hit = 99.0;
         s.progress = 0.0;
@@ -1505,6 +1524,7 @@ impl Server {
             }
             s.budget = (s.budget + 1.0).min(10.0);
             if s.alive {
+                s.fresh = (s.fresh - dt).max(0.0);
                 s.since_hit += dt;
                 if s.since_hit > 3.5 {
                     s.health = (s.health + 32.0 * dt).min(MAX_HEALTH);
@@ -1720,6 +1740,7 @@ impl Server {
             bot: Some(Box::new(brain)),
             zombie,
             melee_cd: 0.0,
+            fresh: 0.0,
         });
         Some(id)
     }

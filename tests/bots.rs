@@ -196,7 +196,7 @@ fn los_bots_no_disparan_desde_lejos_con_subfusil() {
                     .filter_map(|(j, o)| o.as_ref().filter(|o| j != i && o.alive && o.team != p.team).map(|o| o.ps.pos.dist(p.ps.pos)))
                     .fold(999.0f32, f32::min);
                 shots += 1;
-                if gun(p.ps.gun_id()).kind == GunKind::Smg && d > 60.0 {
+                if gun(p.ps.gun_id()).kind == GunKind::Smg && d > 45.0 || d > 105.0 {
                     far += 1;
                 }
             }

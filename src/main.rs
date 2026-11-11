@@ -1346,6 +1346,9 @@ impl App {
         } else if is_key_pressed(KeyCode::Escape) {
             self.pause = false;
             self.team_menu = false;
+            if self.loadout_menu {
+                self.settings.save();
+            }
             self.loadout_menu = false;
             self.last_mouse = None;
             self.grab(true);
@@ -2590,91 +2593,94 @@ impl App {
 
     /// Clase, arma principal y ventaja; las bloqueadas muestran el nivel necesario.
     fn draw_loadout_menu(&mut self) {
+        // El ratón tiene que verse y moverse libre mientras el menú está abierto
+        set_cursor_grab(false);
+        show_mouse(true);
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
-        let w = 980.0f32.min(sw - 40.0);
+        let w = 1000.0f32.min(sw - 30.0);
         let x = sw / 2.0 - w / 2.0;
-        let y = (sh / 2.0 - 300.0).max(20.0);
-        panel(Rect::new(x - 10.0, y - 10.0, w + 20.0, 600.0), 0.92);
-        // Como en CoD2: sin rangos ni desbloqueos, todo está disponible
-        let level = 20u8;
         let snap = self.client.as_ref().and_then(|c| c.snap.as_ref());
         let my_nation = self.client.as_ref().and_then(|c| c.me_info()).map(|p| p.nation).filter(|&n| n != nation::ZOMBIE).unwrap_or_else(|| {
             snap.map(|s| if s.my_team == 1 && s.mode.teams() && s.mode != Mode::Zombies { nation::DE } else { s.allied_nation }).unwrap_or(nation::US)
         });
-        title_c("Equipamiento", sw / 2.0, y + 34.0, 34.0, CREAM);
-        txt_r(nation_name(my_nation), x + w - 10.0, y + 36.0, 18.0, DIM);
-
+        let all = Loadout::carryable(my_nation);
+        let primaries: Vec<u8> = all.iter().copied().filter(|&g| gun(g).kind != GunKind::Pistol).collect();
+        // Lo que lleva ahora (o lo que llevaría)
+        let (cur, _) = Loadout { class: self.settings.class, primary: self.settings.primary, perk: self.settings.perk, secondary: self.settings.secondary }.resolve(my_nation);
+        let mut secondaries: Vec<u8> = all.iter().copied().filter(|&g| gun(g).kind == GunKind::Pistol).collect();
+        secondaries.extend(all.iter().copied().filter(|&g| gun(g).kind != GunKind::Pistol && g != cur[0]));
+        // Filas que quepan en la ventana
+        let rows = primaries.len().max(secondaries.len()).max(perk::COUNT as usize) as f32;
+        let row = ((sh - 200.0) / rows).clamp(30.0, 50.0);
+        let h = 150.0 + rows * row;
+        let y = ((sh - h) / 2.0).max(8.0);
+        panel(Rect::new(x - 8.0, y - 8.0, w + 16.0, h + 16.0), 0.94);
+        title_c("Equipamiento", sw / 2.0, y + 30.0, 32.0, CREAM);
+        txt_r(nation_name(my_nation), x + w - 10.0, y + 30.0, 18.0, DIM);
         let col_w = (w - 40.0) / 3.0;
-        let cx0 = x;
-        let cx1 = x + col_w + 20.0;
-        let cx2 = x + 2.0 * (col_w + 20.0);
-        let top = y + 80.0;
-        txt("Clase", cx0, top, 22.0, CREAM);
-        txt("Arma principal", cx1, top, 22.0, CREAM);
-        txt("Ventaja", cx2, top, 22.0, CREAM);
-        // Clases
-        for (k, c) in CLASSES.iter().enumerate() {
-            let r = Rect::new(cx0, top + 14.0 + k as f32 * 62.0, col_w, 54.0);
-            let sel = self.settings.class == k as u8;
-            round_rect(r, 6.0, if sel { Color::new(0.62, 0.5, 0.28, 0.95) } else { Color::new(0.12, 0.12, 0.1, 0.85) });
-            txt(c.name, r.x + 12.0, r.y + 24.0, 21.0, CREAM);
-            txt(&shorten(c.desc, 44), r.x + 12.0, r.y + 44.0, 14.0, DIM);
-            if r.contains(mouse_position().into()) && is_mouse_button_pressed(MouseButton::Left) {
-                self.settings.class = k as u8;
-                self.settings.primary = 255;
-            }
-        }
-        // Armas de la clase para tu nación
-        let opts = Loadout::options(self.settings.class, my_nation);
-        let chosen = if opts.contains(&self.settings.primary) { self.settings.primary } else { opts.iter().copied().find(|&g| gun(g).unlock <= level).unwrap_or(opts[0]) };
-        for (k, &g) in opts.iter().enumerate() {
-            let d = gun(g);
-            let r = Rect::new(cx1, top + 14.0 + k as f32 * 62.0, col_w, 54.0);
-            let locked = d.unlock > level;
-            let sel = g == chosen && !locked;
-            round_rect(r, 6.0, if sel { Color::new(0.62, 0.5, 0.28, 0.95) } else { Color::new(0.12, 0.12, 0.1, if locked { 0.5 } else { 0.85 }) });
-            txt(d.name, r.x + 12.0, r.y + 24.0, 21.0, if locked { DIM } else { CREAM });
-            let info = if locked {
-                format!("Se desbloquea en el nivel {}", d.unlock)
+        let cols = [x, x + col_w + 20.0, x + 2.0 * (col_w + 20.0)];
+        let top = y + 66.0;
+        txt("Arma principal", cols[0], top, 21.0, CREAM);
+        txt("Arma secundaria", cols[1], top, 21.0, CREAM);
+        txt("Ventaja", cols[2], top, 21.0, CREAM);
+        let mouse: Vec2 = mouse_position().into();
+        let click = is_mouse_button_pressed(MouseButton::Left);
+        let item = |r: Rect, sel: bool, title: &str, sub: &str| -> bool {
+            let hover = r.contains(mouse);
+            let bg = if sel {
+                Color::new(0.62, 0.5, 0.28, 0.95)
+            } else if hover {
+                Color::new(0.25, 0.23, 0.18, 0.9)
             } else {
-                format!("Cargador {} · {}", d.mag, if d.auto { "automática" } else { "tiro a tiro" })
+                Color::new(0.12, 0.12, 0.1, 0.85)
             };
-            txt(&info, r.x + 12.0, r.y + 44.0, 14.0, DIM);
-            gun_silhouette(r.x + r.w - 10.0, r.y + 22.0, matches!(d.kind, GunKind::Smg), with_alpha(CREAM, if locked { 0.3 } else { 0.7 }));
-            if !locked && r.contains(mouse_position().into()) && is_mouse_button_pressed(MouseButton::Left) {
+            round_rect(r, 6.0, bg);
+            let big = (r.h * 0.42).clamp(15.0, 21.0);
+            txt(title, r.x + 10.0, r.y + r.h * 0.48, big, CREAM);
+            if r.h >= 38.0 {
+                txt(sub, r.x + 10.0, r.y + r.h * 0.86, 13.0, DIM);
+            }
+            hover && click
+        };
+        let kind_name = |k: GunKind| match k {
+            GunKind::Rifle => "fusil de cerrojo",
+            GunKind::Semi => "semiautomático",
+            GunKind::Smg => "subfusil",
+            GunKind::Support => "ametralladora ligera",
+            GunKind::Sniper => "con mira telescópica",
+            GunKind::Pistol => "pistola",
+            _ => "",
+        };
+        for (k, &g) in primaries.iter().enumerate() {
+            let d = gun(g);
+            let r = Rect::new(cols[0], top + 10.0 + k as f32 * row, col_w, row - 6.0);
+            if item(r, g == cur[0], d.name, &format!("{} · cargador {}", kind_name(d.kind), d.mag)) {
                 self.settings.primary = g;
+                // La clase sigue al arma (decide las granadas)
+                self.settings.class = CLASSES.iter().position(|c| c.kinds.contains(&d.kind)).unwrap_or(0) as u8;
+                if self.settings.secondary == g {
+                    self.settings.secondary = 255;
+                }
             }
         }
-        if !opts.contains(&self.settings.primary) || gun(self.settings.primary).unlock > level {
-            self.settings.primary = chosen;
+        for (k, &g) in secondaries.iter().enumerate() {
+            let d = gun(g);
+            let r = Rect::new(cols[1], top + 10.0 + k as f32 * row, col_w, row - 6.0);
+            if item(r, g == cur[1], d.name, &format!("{} · cargador {}", kind_name(d.kind), d.mag)) {
+                self.settings.secondary = g;
+            }
         }
-        let pistols = Loadout::pistols(my_nation);
-        let cur = pistols.iter().position(|&g| g == self.settings.secondary).unwrap_or(0);
-        let py = top + 14.0 + opts.len().max(3) as f32 * 62.0 + 6.0;
-        txt(&format!("Pistola: {}", gun(pistols[cur]).name), cx1, py + 20.0, 18.0, CREAM);
-        if pistols.len() > 1 && small_button(Rect::new(cx1 + col_w - 110.0, py, 110.0, 30.0), "Cambiar") {
-            self.settings.secondary = pistols[(cur + 1) % pistols.len()];
-        }
-        // Ventajas
         for k in 0..perk::COUNT {
-            let (name, desc, lvl) = perk_info(k);
-            let r = Rect::new(cx2, top + 14.0 + k as f32 * 52.0, col_w, 46.0);
-            let locked = lvl > level;
-            let sel = self.settings.perk == k;
-            round_rect(r, 6.0, if sel { Color::new(0.62, 0.5, 0.28, 0.95) } else { Color::new(0.12, 0.12, 0.1, if locked { 0.5 } else { 0.85 }) });
-            txt(name, r.x + 12.0, r.y + 20.0, 19.0, if locked { DIM } else { CREAM });
-            let info = if locked { format!("Nivel {lvl}") } else { desc.to_string() };
-            txt(&shorten(&info, 46), r.x + 12.0, r.y + 38.0, 14.0, DIM);
-            if !locked && r.contains(mouse_position().into()) && is_mouse_button_pressed(MouseButton::Left) {
+            let (name, desc, _) = perk_info(k);
+            let r = Rect::new(cols[2], top + 10.0 + k as f32 * row, col_w, row - 6.0);
+            if item(r, self.settings.perk == k, name, desc) {
                 self.settings.perk = k;
             }
         }
-        if perk_info(self.settings.perk).2 > level {
-            self.settings.perk = perk::NONE;
-        }
-        txt_c("El equipamiento nuevo se usa al reaparecer", sw / 2.0, y + 548.0, 16.0, DIM);
-        let ok = button(Rect::new(sw / 2.0 - 120.0, y + 560.0 - 4.0, 240.0, 40.0), "Aceptar") || is_key_pressed(KeyCode::Enter);
+        let by = top + 10.0 + rows * row + 4.0;
+        txt_c("Se aplica al momento si aún no has combatido; si no, al reaparecer · Intro o Esc para cerrar", sw / 2.0, by + 12.0, 15.0, DIM);
+        let ok = button(Rect::new(sw / 2.0 - 120.0, by + 20.0, 240.0, 40.0), "Aceptar") || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
         if ok {
             self.settings.save();
             self.loadout_menu = false;
@@ -2819,13 +2825,6 @@ fn unlocks_at(level: u8) -> Vec<String> {
     v
 }
 
-fn shorten(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        format!("{}…", s.chars().take(n - 1).collect::<String>())
-    }
-}
 
 /// Mira telescópica: todo negro salvo el círculo, con retícula.
 fn scope_overlay(sw: f32, sh: f32) {
