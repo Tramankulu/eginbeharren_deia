@@ -13,4 +13,5 @@ pub mod server;
 pub mod shader;
 pub mod sfx;
 pub mod sim;
+pub mod update;
 pub mod world;

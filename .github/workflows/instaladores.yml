@@ -88,3 +88,6 @@ jobs:
             **Descarga el instalador de tu sistema:**
             - **Windows:** `EginbeharrarenDeia-…-Windows-Instalador.exe` (o el `.zip` portable, sin instalar)
             - **Ubuntu:** `eginbeharraren-deia_…_amd64.deb` (doble clic para instalar)
+
+            **¿Ya lo tienes instalado?** El juego avisa en el menú principal y se actualiza con el botón *Eguneratu*.
+            En Ubuntu, a mano: `sudo apt install ./eginbeharraren-deia_…_amd64.deb` desde la carpeta de descargas.

@@ -837,6 +837,8 @@ struct App {
     scanner: Option<LanScanner>,
     focus: u32,
     port_text: String,
+    /// Aviso de versión nueva (no se comprueba en el modo de capturas)
+    updater: Option<deia::update::Updater>,
     // En partida
     last_mouse: Option<Vec2>,
     crouch: bool,
@@ -888,6 +890,7 @@ impl App {
         let r = Renderer::new(&world);
         let port_text = settings.host_port.to_string();
         App {
+            updater: if std::env::var_os("DEIA_CAPTURA").is_some() { None } else { Some(deia::update::Updater::start()) },
             settings,
             screen: Screen::Main,
             world,
@@ -1088,6 +1091,8 @@ impl App {
         let opts = b("Ajustes");
         let quit = b("Salir");
         txt_c(&format!("Jugador: {}", self.settings.name), cx, y + 30.0, 22.0, DIM);
+        txt_r(&format!("v{}", deia::update::VERSION), screen_width() - 14.0, screen_height() - 14.0, 16.0, DIM);
+        self.update_notice(cx, y + 62.0);
         if join {
             self.scanner = Some(LanScanner::new());
             self.focus = 0;
@@ -1104,6 +1109,34 @@ impl App {
         }
         if quit {
             std::process::exit(0);
+        }
+    }
+
+    /// Aviso de versión nueva bajo el menú principal.
+    fn update_notice(&mut self, cx: f32, y: f32) {
+        use deia::update::State;
+        let Some(u) = self.updater.as_ref() else { return };
+        match u.get() {
+            State::Available(v) => {
+                txt_c(&format!("Hay una versión nueva: v{v}"), cx, y, 22.0, GOLD);
+                if small_button(Rect::new(cx - 110.0, y + 12.0, 220.0, 36.0), "Actualizar") {
+                    u.install(v);
+                }
+            }
+            State::Working => txt_c("Descargando e instalando la versión nueva…", cx, y, 22.0, GOLD),
+            State::Installed => {
+                txt_c("Actualizado: vuelve a abrir el juego", cx, y, 22.0, GOLD);
+                if small_button(Rect::new(cx - 110.0, y + 12.0, 220.0, 36.0), "Salir") {
+                    std::process::exit(0);
+                }
+            }
+            // El instalador de Windows necesita que el juego esté cerrado
+            State::Handed => std::process::exit(0),
+            State::Failed(how) => {
+                txt_c("No se pudo actualizar. Hazlo a mano:", cx, y, 20.0, Color::new(1.0, 0.6, 0.4, 1.0));
+                txt_c(&how, cx, y + 24.0, 18.0, DIM);
+            }
+            State::Checking | State::UpToDate => {}
         }
     }
 

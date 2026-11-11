@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refresca menús, iconos y la lista del centro de software tras desinstalar
+set -e
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+command -v appstreamcli >/dev/null 2>&1 && appstreamcli refresh-cache >/dev/null 2>&1 || true
+exit 0

@@ -1,6 +1,6 @@
 [package]
 name = "eginbeharraren-deia"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 description = "Shooter multijugador en línea de la Segunda Guerra Mundial"
 license = "MIT"

@@ -43,6 +43,17 @@ Descarga el instalador de tu sistema desde la página **Releases** del repositor
 | Windows | `EginbeharrarenDeia-…-Windows-Instalador.exe` | Crea accesos en el menú Inicio y el escritorio, y abre el cortafuegos para poder alojar partidas. También hay un `.zip` portable. |
 | Ubuntu | `eginbeharraren-deia_…_amd64.deb` | Doble clic abre el Centro de aplicaciones; tras instalar, aparece en el menú de aplicaciones. Desde terminal: `sudo apt install ./eginbeharraren-deia_…_amd64.deb`. |
 
+**Actualizar:** desde la 0.8.1, el menú principal avisa cuando hay una versión nueva y el botón
+*Eguneratu / Actualizar* la descarga e instala (en Ubuntu pide la contraseña en una ventana; en
+Windows abre el instalador nuevo). La versión instalada aparece abajo a la derecha del menú.
+En Ubuntu, el Centro de aplicaciones no siempre sustituye un `.deb` que ya está instalado; para
+pasar a mano a una versión nueva, en una terminal desde la carpeta de descargas:
+`sudo apt install ./eginbeharraren-deia_…_amd64.deb`.
+
+**Desinstalar en Ubuntu:** el juego aparece en el Centro de aplicaciones entre las instaladas
+(*Gestionar*) y se quita desde ahí, o con `sudo apt remove eginbeharraren-deia`. En Windows, desde
+*Configuración › Aplicaciones*.
+
 Windows puede mostrar el aviso de SmartScreen porque el instalador no está firmado:
 pulsa *Más información › Ejecutar de todas formas*.
 
@@ -249,6 +260,7 @@ acierta 8 de 8 disparos con compensación, frente a 2 de 8 sin ella.
 | `src/shader.rs` | Sombreadores: luz, cielo, nubes, bruma, viento, detalle de cada material y filtro de pintura |
 | `src/sfx.rs` | Sonidos sintetizados |
 | `src/config.rs` | Ajustes guardados |
+| `src/update.rs` | Aviso de versión nueva y actualización desde el menú |
 | `src/lang.rs` | Traducción de la interfaz (tabla en `assets/idiomas/textos.txt`) |
 | `assets/fonts/` | Tipografías Lora y Outfit (licencia SIL OFL) y DejaVu Sans para el cirílico (licencia incluida) |
 | `packaging/` | Instaladores de cada sistema |
