@@ -2407,3 +2407,17 @@ pub fn dropped_gun(g: &mut Geo, pos: V3, yaw: f32, gun: u8) {
     }
     g.set(m::PLAIN);
 }
+
+
+/// Caja de munición (la dejan los zombis).
+pub fn ammo_box(g: &mut Geo, pos: V3, yaw: f32) {
+    let f = V3::from_yaw(yaw);
+    let r = V3::right_of_yaw(yaw);
+    let ax = [r, V3::UP, f];
+    g.set(m::WOOD);
+    g.obox(pos + V3::UP * 0.12, ax, [0.22, 0.12, 0.14], [0.45, 0.48, 0.30, 1.0]);
+    g.set(m::METAL);
+    g.obox(pos + V3::UP * 0.25, ax, [0.06, 0.015, 0.03], [0.2, 0.2, 0.2, 1.0]);
+    g.set(m::PLAIN);
+    g.obox(pos + V3::UP * 0.12 + f * 0.141, ax, [0.12, 0.05, 0.002], [0.92, 0.85, 0.4, 1.0]);
+}

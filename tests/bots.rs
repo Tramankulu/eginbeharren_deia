@@ -226,3 +226,27 @@ fn los_caidos_dejan_su_arma() {
     println!("armas en el suelo: hasta {most}, recogida alguna: {picked}");
     assert!(most >= 3);
 }
+
+#[test]
+fn no_aparece_hasta_elegir_armas() {
+    let mut s = server(vec![Mode::Tdm], 4, None);
+    let addr: SocketAddr = format!("127.0.0.1:{}", s.local_port()).parse().unwrap();
+    let world = World::village();
+    let mut c = NetClient::connect(addr, "Nuevo").unwrap();
+    c.ready = false;
+    for _ in 0..(15 * TICK_HZ) {
+        c.update(&FrameInput::default(), DT, &world);
+        s.update();
+    }
+    assert!(c.pred.is_none(), "ha aparecido sin elegir armas");
+    assert_eq!(s.phase, Phase::Playing, "la partida debe seguir con los bots");
+    c.loadout = Loadout { class: 1, primary: 1, perk: 0, secondary: 0 };
+    c.ready = true;
+    for _ in 0..(3 * TICK_HZ) {
+        c.update(&FrameInput::default(), DT, &world);
+        s.update();
+    }
+    let p = c.pred.as_ref().expect("no aparece tras elegir");
+    // Clase asalto: un subfusil de su nación
+    assert_eq!(gun(p.guns[0]).kind, GunKind::Smg);
+}

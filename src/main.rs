@@ -953,7 +953,9 @@ impl App {
     fn connect_to(&mut self, addr: std::net::SocketAddr) {
         self.reset_game_state();
         match NetClient::connect_map(addr, &self.settings.name, self.world.map_id) {
-            Ok(c) => {
+            Ok(mut c) => {
+                // Como en CoD2: antes de aparecer se eligen las armas
+                c.ready = self.demo_step != 0;
                 self.client = Some(c);
                 self.screen = Screen::Connecting;
             }
@@ -1292,7 +1294,7 @@ impl App {
         i.reload = is_key_pressed(KeyCode::R);
         i.grenade = is_key_pressed(KeyCode::G);
         i.smoke = is_key_pressed(KeyCode::H) || is_key_pressed(KeyCode::Key4);
-        i.melee = is_key_pressed(KeyCode::V) || is_mouse_button_pressed(MouseButton::Middle);
+        i.melee = is_key_pressed(KeyCode::V) || is_key_pressed(KeyCode::E) || is_mouse_button_pressed(MouseButton::Middle);
         i.use_key = is_key_down(KeyCode::F);
         i.mount = is_key_pressed(KeyCode::F);
         if is_key_pressed(KeyCode::Key1) {
@@ -1358,7 +1360,7 @@ impl App {
             // No se abre solo (en algunos equipos dejaba el ratón atrapado):
             // se avisa de que con L se eligen las armas
             self.loadout_shown = true;
-            self.announces.push(("Pulsa L para elegir tus armas y tu ventaja".to_string(), tone::ALERT, 9.0));
+            self.announces.push(("Pulsa L para cambiar de armas".to_string(), tone::NEUTRAL, 6.0));
         }
 
         let ads = self.client.as_ref().and_then(|c| c.pred.as_ref().map(|p| p.ads)).unwrap_or(0.0);
@@ -1601,7 +1603,13 @@ impl App {
                 Ev::Pickup { who, pos, gun: g, weapon } => {
                     if *who == me {
                         self.sounds.play(&self.sounds.switch, 0.6);
-                        let t = if *weapon { format!("Has cogido un {}", gun(*g).name) } else { format!("Munición de {}", gun(*g).name) };
+                        let t = if *g == deia::sim::AMMO_BOX {
+                            "Munición y una granada".to_string()
+                        } else if *weapon {
+                            format!("Has cogido un {}", gun(*g).name)
+                        } else {
+                            format!("Munición de {}", gun(*g).name)
+                        };
                         self.xp_pops.push((t, 2.0));
                     } else {
                         self.sounds.play_at(&self.sounds.impact, 0.2 * near(*pos, 15.0), *pos, ear, yaw);
@@ -1933,7 +1941,11 @@ impl App {
         if let Some(s) = snap {
             for d in &s.drops {
                 dg.sun = sun_vis(&self.world, d.pos + V3::UP * 0.3);
-                geo::dropped_gun(&mut dg, d.pos, d.yaw, d.gun);
+                if d.gun == deia::sim::AMMO_BOX {
+                    geo::ammo_box(&mut dg, d.pos, d.yaw);
+                } else {
+                    geo::dropped_gun(&mut dg, d.pos, d.yaw, d.gun);
+                }
             }
         }
         dg.sun = 1.0;
@@ -2195,7 +2207,7 @@ impl App {
                 });
                 // Arma en el suelo
                 if near_turret.is_none() {
-                    if let Some(d) = s.drops.iter().filter(|d| d.pos.dist_flat(p.pos) < 1.4 && !p.guns.contains(&d.gun)).min_by(|a, b| a.pos.dist_flat(p.pos).partial_cmp(&b.pos.dist_flat(p.pos)).unwrap()) {
+                    if let Some(d) = s.drops.iter().filter(|d| d.pos.dist_flat(p.pos) < 1.4 && d.gun != deia::sim::AMMO_BOX && !p.guns.contains(&d.gun)).min_by(|a, b| a.pos.dist_flat(p.pos).partial_cmp(&b.pos.dist_flat(p.pos)).unwrap()) {
                         txt_c(&format!("Pulsa F para cambiar tu {} por el {}", p.gun().name, gun(d.gun).name), cx, cy + 150.0, 22.0, GOLD);
                     }
                 }
@@ -2247,7 +2259,9 @@ impl App {
             }
         } else if s.phase != Phase::Intermission {
             // Muerto
-            let line = if s.mode == Mode::Zombies && s.phase == Phase::Playing {
+            let line = if !c.ready {
+                "Elige tus armas para entrar en combate".to_string()
+            } else if s.mode == Mode::Zombies && s.phase == Phase::Playing {
                 "Has caído: volverás con la próxima oleada si tus compañeros resisten".to_string()
             } else if s.mode == Mode::Sd && s.phase == Phase::Playing {
                 "Estás fuera de combate hasta la próxima ronda · Clic: cambiar de cámara".to_string()
@@ -2698,9 +2712,40 @@ impl App {
             }
         }
         let by = top + 10.0 + rows * row + 4.0;
-        txt_c("Se aplica al momento si aún no has combatido; si no, al reaparecer · Intro o Esc para cerrar", sw / 2.0, by + 12.0, 15.0, DIM);
-        let ok = button(Rect::new(sw / 2.0 - 120.0, by + 20.0, 240.0, 40.0), "Aceptar") || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
+        txt_c("Ratón, o teclado: 1-9 principal · Q/E secundaria · ↑/↓ ventaja · Intro para salir al combate", sw / 2.0, by + 12.0, 15.0, DIM);
+        // También con el teclado: 1-9 arma principal, Q/E secundaria, ↑/↓ ventaja
+        let keys = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4, KeyCode::Key5, KeyCode::Key6, KeyCode::Key7, KeyCode::Key8, KeyCode::Key9];
+        for (k, key) in keys.iter().enumerate() {
+            if is_key_pressed(*key) {
+                if let Some(&g) = primaries.get(k) {
+                    self.settings.primary = g;
+                    self.settings.class = CLASSES.iter().position(|c| c.kinds.contains(&gun(g).kind)).unwrap_or(0) as u8;
+                    if self.settings.secondary == g {
+                        self.settings.secondary = 255;
+                    }
+                }
+            }
+        }
+        let si = secondaries.iter().position(|&g| g == cur[1]).unwrap_or(0) as i32;
+        let n = secondaries.len().max(1) as i32;
+        if is_key_pressed(KeyCode::E) {
+            self.settings.secondary = secondaries[((si + 1).rem_euclid(n)) as usize];
+        }
+        if is_key_pressed(KeyCode::Q) {
+            self.settings.secondary = secondaries[((si - 1).rem_euclid(n)) as usize];
+        }
+        if is_key_pressed(KeyCode::Down) {
+            self.settings.perk = (self.settings.perk + 1) % perk::COUNT;
+        }
+        if is_key_pressed(KeyCode::Up) {
+            self.settings.perk = (self.settings.perk + perk::COUNT - 1) % perk::COUNT;
+        }
+        let ok = button(Rect::new(sw / 2.0 - 120.0, by + 20.0, 240.0, 40.0), "Aceptar") || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter) || is_key_pressed(KeyCode::Space);
         if ok {
+            if let Some(c) = self.client.as_mut() {
+                c.loadout = Loadout { class: self.settings.class, primary: self.settings.primary, perk: self.settings.perk, secondary: self.settings.secondary };
+                c.ready = true;
+            }
             self.settings.save();
             self.loadout_menu = false;
             self.last_mouse = None;
@@ -2796,10 +2841,17 @@ impl App {
                 let target = c.server.to_string();
                 match c.status.clone() {
                     Status::Connected => {
+                        let choosing = !c.ready;
                         self.client = Some(c);
                         self.screen = Screen::Game;
                         self.last_mouse = None;
-                        self.grab(true);
+                        if choosing {
+                            self.loadout_menu = true;
+                            self.loadout_shown = true;
+                            self.grab(false);
+                        } else {
+                            self.grab(true);
+                        }
                     }
                     Status::Failed(why) => {
                         self.client = Some(c);

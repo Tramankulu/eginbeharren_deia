@@ -102,6 +102,8 @@ pub struct NetClient {
     /// Equipamiento elegido y nivel (se mandan en cada paquete)
     pub loadout: Loadout,
     pub level: u8,
+    /// Ya se han elegido las armas: el servidor puede hacerle aparecer
+    pub ready: bool,
     chat_id: u16,
     chat_pending: Option<(bool, String, u8)>,
     pub bytes_in: usize,
@@ -153,6 +155,8 @@ impl NetClient {
             team_req: 0,
             loadout: Loadout::default(),
             level: 1,
+            // El juego lo pone a false hasta que se eligen las armas
+            ready: true,
             chat_id: 0,
             chat_pending: None,
             bytes_in: 0,
@@ -460,6 +464,7 @@ impl NetClient {
         w.u8(self.loadout.perk);
         w.u8(self.loadout.secondary);
         w.u8(self.level);
+        w.bool(self.ready);
         match self.chat_pending.as_mut() {
             Some((team_only, text, left)) => {
                 w.u16(self.chat_id);

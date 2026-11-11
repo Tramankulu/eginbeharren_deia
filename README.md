@@ -103,8 +103,7 @@ cuando entra una persona.
 ### Naciones, clases y armas
 
 El Eje es siempre Alemania; los Aliados pueden ser estadounidenses, británicos o soviéticos
-(se elige al crear la partida), cada uno con su uniforme, su casco y sus armas. Con la tecla **L**
-eliges arma principal, arma secundaria (la pistola u otra arma de tu
+(se elige al crear la partida), cada uno con su uniforme, su casco y sus armas. Al entrar en la partida, antes de aparecer, eliges (y luego con la tecla **L** cuando quieras) arma principal, arma secundaria (la pistola u otra arma de tu
 nación) y ventaja. Si aún no has combatido desde que apareciste, el cambio es inmediato.
 
 | Clase | Estados Unidos | Reino Unido | Unión Soviética | Alemania |
@@ -124,6 +123,9 @@ Blender se colocan con objetos llamados `AMETRALLADORA_ALIADOS` o `AMETRALLADORA
 **Armas en el suelo:** quien cae deja el arma que llevaba en la mano con su munición. Pasando
 por encima de un arma igual a una de las tuyas coges su munición; con **F** cambias el arma que
 llevas en la mano por la del suelo (y dejas la tuya).
+
+En el modo Zombis, los zombis dejan a veces **cajas de munición** (dos cargadores por arma y una
+granada).
 
 **Granadas:** cada nación tiene la suya (Mk 2, Mills, RG-42 y la de mango alemana), y todos llevan
 además una **granada de humo** (tecla **H**) que tapa la vista durante 24 s, también a los bots.
@@ -153,7 +155,7 @@ derecha según de dónde vengan.
 | G | Granada |
 | F | Devolver una granada · mantener: colocar / desactivar bomba |
 | L | Equipamiento: clase, arma, pistola y ventaja |
-| V o botón central | Culatazo |
+| V, E o botón central | Culatazo |
 | H o 4 | Granada de humo |
 | F junto a un nido | Usar / soltar la ametralladora montada |
 | Shift con la mira telescópica | Aguantar la respiración |

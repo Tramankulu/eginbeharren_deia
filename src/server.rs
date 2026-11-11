@@ -131,6 +131,8 @@ pub struct Slot {
     /// Recién aparecido y sin haber combatido: un cambio de equipamiento se
     /// aplica al momento (como al elegir arma antes de salir)
     pub fresh: f32,
+    /// Ya ha elegido sus armas (hasta entonces no aparece)
+    pub ready: bool,
 }
 
 impl Slot {
@@ -468,6 +470,7 @@ impl Server {
             zombie: false,
             melee_cd: 0.0,
             fresh: 0.0,
+            ready: false,
             addr,
             name: name.clone(),
             team,
@@ -542,8 +545,8 @@ impl Server {
     }
 
     fn on_cmds(&mut self, id: usize, r: &mut R) {
-        let (Some(snap_tick), Some(ev_ack), Some(team_req), Some(class), Some(primary), Some(perk_id), Some(secondary), Some(level), Some(chat_id)) =
-            (r.u32(), r.u32(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u16())
+        let (Some(snap_tick), Some(ev_ack), Some(team_req), Some(class), Some(primary), Some(perk_id), Some(secondary), Some(level), Some(ready), Some(chat_id)) =
+            (r.u32(), r.u32(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.bool(), r.u16())
         else {
             return;
         };
@@ -559,6 +562,7 @@ impl Server {
             }
             s.loadout = new;
             s.level = level.clamp(1, 20);
+            s.ready = s.ready || ready;
         }
         let chat = if chat_id != 0 {
             let (Some(team_only), Some(text)) = (r.bool(), r.str()) else { return };
@@ -739,7 +743,7 @@ impl Server {
             if d > MELEE_RANGE || to.y.abs() > 1.4 {
                 continue;
             }
-            if to.flat().norm().dot(flat) < 0.55 && d > 0.6 {
+            if to.flat().norm().dot(flat) < 0.35 && d > 0.7 {
                 continue;
             }
             if !self.world.los(eye, s.ps.pos + V3::UP * 1.1) {
@@ -901,6 +905,28 @@ impl Server {
                 if !s.alive || s.zombie || s.ps.pos.dist_flat(info.pos) > 1.0 || (s.ps.pos.y - info.pos.y).abs() > 1.2 {
                     continue;
                 }
+                if info.gun == AMMO_BOX {
+                    // Caja de munición: un cargador más para cada arma
+                    let mut got = false;
+                    for slot in 0..2 {
+                        let def = crate::sim::gun(s.ps.guns[slot]);
+                        let cap = def.start_reserve * 2;
+                        let a = &mut s.ps.ammo[slot];
+                        if a.reserve < cap {
+                            a.reserve = (a.reserve + def.mag * 2).min(cap);
+                            got = true;
+                        }
+                    }
+                    if s.ps.grenades < 3 {
+                        s.ps.grenades += 1;
+                        got = true;
+                    }
+                    if got {
+                        taken = Some(i);
+                        break;
+                    }
+                    continue;
+                }
                 for slot in 0..2 {
                     if s.ps.guns[slot] != info.gun {
                         continue;
@@ -938,7 +964,7 @@ impl Server {
             .drops
             .iter()
             .enumerate()
-            .filter(|(_, d)| d.0.pos.dist_flat(pos) < 1.4 && !s.ps.guns.contains(&d.0.gun))
+            .filter(|(_, d)| d.0.pos.dist_flat(pos) < 1.4 && d.0.gun != AMMO_BOX && !s.ps.guns.contains(&d.0.gun))
             .min_by(|a, b| a.1 .0.pos.dist_flat(pos).partial_cmp(&b.1 .0.pos.dist_flat(pos)).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(k, _)| k)
         else {
@@ -966,6 +992,17 @@ impl Server {
                 let slot = (v.ps.slot as usize).min(1);
                 let (pos, yaw, g, a) = (v.ps.pos, v.ps.yaw, v.ps.guns[slot], v.ps.ammo[slot]);
                 self.drop_gun(pos, yaw, g, a.mag, a.reserve);
+            } else if v.zombie && v.alive {
+                // Los zombis dejan a veces una caja de munición
+                let (pos, yaw) = (v.ps.pos, v.ps.yaw);
+                if self.rng.chance(0.45) {
+                    let id = self.next_drop;
+                    self.next_drop = self.next_drop.wrapping_add(1).max(1);
+                    self.drops.push((DropInfo { id, pos: v3(pos.x, pos.y.max(0.0) + 0.06, pos.z), yaw, gun: AMMO_BOX }, 0, 0, DROP_TIME));
+                    while self.drops.len() > 32 {
+                        self.drops.remove(0);
+                    }
+                }
             }
         }
         let counting = self.phase == Phase::Playing;
@@ -1205,7 +1242,7 @@ impl Server {
         if self.mode == Mode::Zombies {
             self.wave = 0;
             self.phase_t = 0.0;
-            let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| !s.zombie).unwrap_or(false)).collect();
+            let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| !s.zombie && s.ready).unwrap_or(false)).collect();
             for i in ids {
                 self.spawn(i);
             }
@@ -1214,7 +1251,7 @@ impl Server {
             self.start_round();
         } else {
             self.phase_t = self.match_seconds();
-            let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].is_some()).collect();
+            let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| s.ready).unwrap_or(false)).collect();
             for i in ids {
                 self.spawn(i);
             }
@@ -1233,7 +1270,7 @@ impl Server {
         self.bomb_state = bomb_state::NONE;
         self.bomb_timer = 0.0;
         self.grenades.clear();
-        let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].is_some()).collect();
+        let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| s.ready).unwrap_or(false)).collect();
         for i in ids {
             self.spawn(i);
         }
@@ -1637,6 +1674,11 @@ impl Server {
                 continue;
             }
             s.budget = (s.budget + 1.0).min(10.0);
+            if !s.ready {
+                // Todavía eligiendo armas: no aparece
+                s.respawn_t = s.respawn_t.min(0.3);
+                continue;
+            }
             if s.alive {
                 s.fresh = (s.fresh - dt).max(0.0);
                 s.since_hit += dt;
@@ -1857,6 +1899,7 @@ impl Server {
             zombie,
             melee_cd: 0.0,
             fresh: 0.0,
+            ready: true,
         });
         Some(id)
     }
@@ -2101,7 +2144,7 @@ impl Server {
         self.zombies_to_spawn = 4 + self.wave * 3 + humans.saturating_sub(1) * 2;
         self.wave_break = 0.0;
         // Revivir a los caídos
-        let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| !s.zombie && !s.alive).unwrap_or(false)).collect();
+        let ids: Vec<usize> = (0..self.slots.len()).filter(|&i| self.slots[i].as_ref().map(|s| !s.zombie && !s.alive && s.ready).unwrap_or(false)).collect();
         for i in ids {
             self.spawn(i);
         }

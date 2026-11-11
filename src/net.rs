@@ -3,7 +3,7 @@
 use crate::math::*;
 use crate::sim::{Ammo, Cmd, PState};
 
-pub const PROTOCOL: u16 = 4;
+pub const PROTOCOL: u16 = 5;
 pub const DEFAULT_PORT: u16 = 28960;
 pub const MAGIC: [u8; 2] = *b"ED";
 /// Una instantánea cada 3 ticks = 20 por segundo.

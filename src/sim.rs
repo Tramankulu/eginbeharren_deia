@@ -195,13 +195,16 @@ pub const GUNS: [GunDef; 34] = [
 ];
 
 /// Ametralladora montada de cada nación.
+/// «Arma» especial de las cajas de munición que dejan los zombis.
+pub const AMMO_BOX: u8 = 254;
+
 pub fn mounted_gun(n: u8) -> u8 {
     nation_gun(if n == nation::ZOMBIE { nation::DE } else { n }, GunKind::Mounted)
 }
 
 /// Distancia a la que se puede coger una ametralladora montada o dar un culatazo.
 pub const MOUNT_RANGE: f32 = 1.4;
-pub const MELEE_RANGE: f32 = 1.8;
+pub const MELEE_RANGE: f32 = 2.3;
 pub const MELEE_DAMAGE: f32 = 135.0;
 /// Giro máximo de una ametralladora montada a cada lado (radianes)
 pub const MOUNT_ARC: f32 = 1.05;
