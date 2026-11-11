@@ -165,3 +165,44 @@ fn ametralladora_montada_y_culatazo() {
     let (g, _) = Loadout { secondary: Loadout::pistols(nation::DE)[1], ..Default::default() }.resolve(nation::DE);
     assert_eq!(gun(g[1]).name, "Walther P38");
 }
+
+#[test]
+fn las_copas_de_los_arboles_tapan_la_vista() {
+    use deia::math::*;
+    let w = World::village();
+    assert!(!w.foliage.is_empty());
+    let (c, r) = w.foliage[0];
+    // A través de la copa no se ve; por debajo, sí (salvo que haya algo más)
+    let a = c + v3(-r * 2.0, 0.0, 0.0);
+    let b = c + v3(r * 2.0, 0.0, 0.0);
+    assert!(!w.sight(a, b));
+    assert!(w.los(a, b) || !w.sight(a, b));
+}
+
+#[test]
+fn los_bots_no_disparan_desde_lejos_con_subfusil() {
+    let mut s = server(vec![Mode::Tdm], 10, Some(200));
+    let mut far = 0;
+    let mut shots = 0;
+    for _ in 0..(4 * 60 * TICK_HZ) {
+        s.update();
+        // Distancia al enemigo más cercano de cada bot que acaba de disparar
+        for (i, p) in s.slots.iter().enumerate().filter_map(|(i, p)| p.as_ref().map(|p| (i, p))) {
+            if p.alive && p.ps.cooldown > p.ps.gun().interval - deia::sim::DT * 1.5 && p.ps.cooldown > 0.0 {
+                let d = s
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, o)| o.as_ref().filter(|o| j != i && o.alive && o.team != p.team).map(|o| o.ps.pos.dist(p.ps.pos)))
+                    .fold(999.0f32, f32::min);
+                shots += 1;
+                if gun(p.ps.gun_id()).kind == GunKind::Smg && d > 60.0 {
+                    far += 1;
+                }
+            }
+        }
+    }
+    println!("disparos {shots}, de subfusil a más de 60 m: {far}, bajas {}", total_kills(&s));
+    assert!(shots > 50);
+    assert!(far * 20 < shots, "demasiados disparos de subfusil a distancia");
+}

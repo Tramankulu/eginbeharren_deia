@@ -1792,6 +1792,7 @@ impl Server {
                     zombie: s.zombie,
                     health: s.health,
                     carrying: self.mode == Mode::Ctf && self.flags.iter().any(|f| f.state == flag_state::CARRIED && f.carrier as usize == i),
+                    moving: s.ps.moving,
                 })
             })
             .collect();

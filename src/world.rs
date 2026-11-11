@@ -187,6 +187,8 @@ pub struct Turret {
 pub struct World {
     /// Ametralladoras montadas
     pub turrets: Vec<Turret>,
+    /// Copas de árbol y matorrales: tapan la vista (no las balas). (centro, radio)
+    pub foliage: Vec<(V3, f32)>,
     pub blocks: Vec<Block>,
     pub props: Vec<Prop>,
     pub decals: Vec<Decal>,
@@ -554,6 +556,7 @@ impl World {
     pub fn village() -> World {
         let mut w = World {
             turrets: Vec::new(),
+            foliage: Vec::new(),
             blocks: Vec::new(),
             props: Vec::new(),
             decals: Vec::new(),
@@ -813,7 +816,33 @@ impl World {
             v3(-40.0, 0.0, 56.0),
         ];
         w.build_links();
+        w.compute_foliage();
         w
+    }
+
+    /// Copas de los árboles (como en el dibujo: una nube de hojas a media altura).
+    fn compute_foliage(&mut self) {
+        self.foliage = self
+            .props
+            .iter()
+            .filter_map(|p| match p {
+                Prop::Tree { pos, size } => Some((*pos + V3::UP * (5.6 * size), 2.9 * size)),
+                _ => None,
+            })
+            .collect();
+    }
+
+    /// ¿Se ve `b` desde `a`? Como `los`, pero también tapan las copas de los árboles.
+    pub fn sight(&self, a: V3, b: V3) -> bool {
+        if !self.los(a, b) {
+            return false;
+        }
+        let d = b - a;
+        let l2 = d.len_sq().max(1e-6);
+        !self.foliage.iter().any(|&(c, r)| {
+            let t = ((c - a).dot(d) / l2).clamp(0.0, 1.0);
+            (a + d * t).dist(c) < r * 0.85
+        })
     }
 
     /// Siguiente punto hacia el que caminar para llegar a `goal`
@@ -924,6 +953,7 @@ impl World {
         let at = |k: usize| v3(g[k][12] * s, g[k][13] * s, g[k][14] * s);
         let mut w = World {
             turrets: Vec::new(),
+            foliage: Vec::new(),
             blocks: Vec::new(),
             props: Vec::new(),
             decals: Vec::new(),

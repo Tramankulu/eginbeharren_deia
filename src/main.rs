@@ -14,7 +14,7 @@ use deia::net::*;
 use deia::server::{spawn_listen_server, ServerConfig, SITE_RADIUS};
 use deia::sfx;
 use deia::shader;
-use deia::sim::{gun, level_of, mounted_gun, MOUNT_RANGE, NO_TURRET, nation, nation_name, perk, perk_info, team_name, xp_for_level, GunKind, Loadout, CLASSES, GUNS, MAX_HEALTH, RANKS, STAND_EYE};
+use deia::sim::{gun, level_of, mounted_gun, MOUNT_RANGE, NO_TURRET, nation, nation_name, perk, perk_info, team_name, GunKind, Loadout, CLASSES, GUNS, MAX_HEALTH, RANKS, STAND_EYE};
 use deia::world::{Aabb, World};
 use macroquad::audio::{load_sound_from_bytes, play_sound, set_sound_volume, stop_sound, PlaySoundParams, Sound};
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
@@ -1372,7 +1372,7 @@ impl App {
         self.sway = want;
         if let Some(c) = self.client.as_mut() {
             c.loadout = Loadout { class: self.settings.class, primary: self.settings.primary, perk: self.settings.perk, secondary: self.settings.secondary };
-            c.level = level_of(self.settings.xp);
+            c.level = 1;
         }
         let mut client = self.client.take().unwrap();
         client.update(&inp, dt, &self.world);
@@ -1560,7 +1560,8 @@ impl App {
                     }
                 }
                 Ev::Whistle => self.sounds.play(&self.sounds.whistle, 0.6),
-                Ev::Xp { who, amount, reason } if *who == me => {
+                // Sin rangos: la experiencia no se usa
+                Ev::Xp { who, amount, reason } if *who == me && false => {
                     let before = level_of(self.settings.xp);
                     self.settings.xp = self.settings.xp.saturating_add(*amount as u32);
                     let label = match *reason {
@@ -2548,10 +2549,7 @@ impl App {
                 draw_rectangle(x, y - 19.0, w, 26.0, Color::new(1.0, 1.0, 1.0, 0.08));
             }
             let name = if p.alive || s.mode != Mode::Sd { p.name.clone() } else { format!("{} (caído)", p.name) };
-            if p.level > 0 {
-                rank_badge(x + 18.0, y - 6.0, p.level);
-            }
-            txt(&name, x + 36.0, y, 20.0, col);
+            txt(&name, x + 10.0, y, 20.0, col);
             txt_r(&p.score.to_string(), x + w - 250.0, y, 20.0, CREAM);
             txt_r(&p.kills.to_string(), x + w - 170.0, y, 20.0, CREAM);
             txt_r(&p.deaths.to_string(), x + w - 80.0, y, 20.0, CREAM);
@@ -2598,21 +2596,14 @@ impl App {
         let x = sw / 2.0 - w / 2.0;
         let y = (sh / 2.0 - 300.0).max(20.0);
         panel(Rect::new(x - 10.0, y - 10.0, w + 20.0, 600.0), 0.92);
-        let level = level_of(self.settings.xp);
+        // Como en CoD2: sin rangos ni desbloqueos, todo está disponible
+        let level = 20u8;
         let snap = self.client.as_ref().and_then(|c| c.snap.as_ref());
         let my_nation = self.client.as_ref().and_then(|c| c.me_info()).map(|p| p.nation).filter(|&n| n != nation::ZOMBIE).unwrap_or_else(|| {
             snap.map(|s| if s.my_team == 1 && s.mode.teams() && s.mode != Mode::Zombies { nation::DE } else { s.allied_nation }).unwrap_or(nation::US)
         });
         title_c("Equipamiento", sw / 2.0, y + 34.0, 34.0, CREAM);
-        // Rango y experiencia
-        let next = xp_for_level((level + 1).min(20));
-        let cur = xp_for_level(level);
-        rank_badge(x + 24.0, y + 30.0, level);
-        txt(&format!("{} · nivel {}", RANKS[level as usize - 1], level), x + 46.0, y + 36.0, 20.0, GOLD);
-        let prog = if level >= 20 { 1.0 } else { (self.settings.xp - cur) as f32 / (next - cur).max(1) as f32 };
-        draw_rectangle(x + 46.0, y + 46.0, 220.0, 6.0, Color::new(0.0, 0.0, 0.0, 0.5));
-        draw_rectangle(x + 46.0, y + 46.0, 220.0 * prog, 6.0, GOLD);
-        txt_r(&format!("{} · {}", nation_name(my_nation), self.settings.xp), x + w - 10.0, y + 36.0, 18.0, DIM);
+        txt_r(nation_name(my_nation), x + w - 10.0, y + 36.0, 18.0, DIM);
 
         let col_w = (w - 40.0) / 3.0;
         let cx0 = x;
@@ -2833,36 +2824,6 @@ fn shorten(s: &str, n: usize) -> String {
         s.to_string()
     } else {
         format!("{}…", s.chars().take(n - 1).collect::<String>())
-    }
-}
-
-/// Galones del rango: chevrones para la tropa, barras para oficiales y estrellas para generales.
-fn rank_badge(x: f32, y: f32, level: u8) {
-    let col = Color::new(0.95, 0.8, 0.4, 1.0);
-    let ink = Color::new(0.15, 0.1, 0.05, 0.9);
-    draw_circle(x, y, 11.0, ink);
-    match level {
-        1..=8 => {
-            let n = ((level + 1) / 2).clamp(1, 4) as i32;
-            for k in 0..n {
-                let yy = y - 4.0 + k as f32 * 4.0 - (n - 1) as f32 * 1.5;
-                draw_line(x - 6.0, yy - 2.0, x, yy + 2.0, 2.0, col);
-                draw_line(x, yy + 2.0, x + 6.0, yy - 2.0, 2.0, col);
-            }
-        }
-        9..=15 => {
-            let n = (level - 8).min(3) as i32;
-            for k in 0..n {
-                draw_rectangle(x - 6.0, y - 5.0 + k as f32 * 4.0, 12.0, 2.5, col);
-            }
-        }
-        _ => {
-            let n = (level - 15).min(4) as i32;
-            for k in 0..n {
-                let sx = x - (n - 1) as f32 * 3.0 + k as f32 * 6.0;
-                draw_poly(sx, y, 5, 3.0, -90.0, col);
-            }
-        }
     }
 }
 

@@ -22,6 +22,8 @@ pub struct PView {
     pub zombie: bool,
     pub health: f32,
     pub carrying: bool,
+    /// Lo rápido que se mueve (0..1)
+    pub moving: f32,
 }
 
 /// Lo que sabe un bot de la partida en este tick.
@@ -109,6 +111,8 @@ pub struct Brain {
     role: u8,
     prev_health: f32,
     hurt_t: f32,
+    /// A quién está empezando a ver y cuánto (llega a 0,35 para reaccionar)
+    noticing: Option<(u8, f32)>,
     /// Rodeo hacia el objetivo (por un flanco) y si ya se ha pasado por él
     via: Option<V3>,
     via_done: bool,
@@ -157,6 +161,7 @@ impl Brain {
             hurt_t: 99.0,
             via: None,
             via_done: false,
+            noticing: None,
             rng,
         }
     }
@@ -212,24 +217,69 @@ impl Brain {
         let is_enemy = |p: &PView| p.id != me && p.alive && (!v.teams || p.team != my_team);
 
         // ---- Percepción ----
+        // Como una persona: se ve peor lo lejano, lo quieto, lo agachado y lo
+        // que asoma poco; las copas de los árboles y el humo tapan. Y cada
+        // arma tiene su alcance: con un subfusil no se dispara a 100 m.
         let fwd = V3::from_yaw_pitch(self.yaw, self.pitch);
-        let mut best: Option<(u8, f32, V3)> = None;
+        let def_now = ps.gun();
+        let max_d = match def_now.kind {
+            GunKind::Smg | GunKind::Pistol => 55.0,
+            GunKind::Sniper => 140.0,
+            GunKind::Mounted => 110.0,
+            _ => 90.0,
+        };
+        let mut best: Option<(u8, f32, V3, f32)> = None;
         for p in v.players.iter().filter(|p| is_enemy(p)) {
             let chest = p.pos + V3::UP * lerp(1.25, 0.8, p.crouch);
             let d = eye.dist(chest);
-            if d > 140.0 {
+            if d > max_d {
                 continue;
             }
             let dir = (chest - eye) / d.max(0.01);
-            let in_fov = dir.dot(fwd) > FOV_COS || d < 9.0 || self.zombie;
-            if in_fov && world.los(eye, chest) && !v.smoke_blocks(eye, chest) {
-                // Preferir al más cercano y al que ya teníamos
-                let score = d - if Some(p.id) == self.target { 8.0 } else { 0.0 };
-                if best.map(|b| score < b.1).unwrap_or(true) {
-                    best = Some((p.id, score, chest));
-                }
+            let in_fov = dir.dot(fwd) > FOV_COS || d < 6.0 || self.zombie;
+            if !in_fov {
+                continue;
+            }
+            let pts = [p.eye, chest, p.pos + V3::UP * lerp(0.85, 0.55, p.crouch)];
+            let vis = pts.iter().filter(|&&q| world.sight(eye, q) && !v.smoke_blocks(eye, q)).count();
+            if vis == 0 {
+                continue;
+            }
+            let shooting = v.shots.iter().any(|s| s.0 == p.id);
+            let ease = (vis as f32 / 3.0)
+                * (1.7 - d / 45.0).clamp(0.12, 1.6)
+                * (0.55 + 0.45 * p.moving.max(if shooting { 1.0 } else { 0.0 }) + if shooting { 0.8 } else { 0.0 })
+                * lerp(1.0, 0.6, p.crouch);
+            // Preferir al más cercano y al que ya teníamos
+            let score = d - if Some(p.id) == self.target { 8.0 } else { 0.0 };
+            if best.map(|b| score < b.1).unwrap_or(true) {
+                best = Some((p.id, score, chest, ease));
             }
         }
+        // Hay que fijarse en alguien antes de reaccionar
+        let best = match best {
+            Some((id, sc, chest, ease)) => {
+                if self.noticing.map(|n| n.0) != Some(id) {
+                    self.noticing = Some((id, 0.0));
+                }
+                let n = self.noticing.as_mut().unwrap();
+                n.1 += DT * ease * (0.8 + 0.6 * self.skill);
+                if n.1 >= 0.35 || Some(id) == self.target {
+                    Some((id, sc, chest))
+                } else {
+                    None
+                }
+            }
+            None => {
+                if let Some(n) = self.noticing.as_mut() {
+                    n.1 -= DT * 0.5;
+                    if n.1 <= 0.0 {
+                        self.noticing = None;
+                    }
+                }
+                None
+            }
+        };
         // Oído: disparos enemigos cercanos
         for &(sh, from) in &v.shots {
             if let Some(p) = v.players.iter().find(|p| p.id == sh) {

@@ -109,10 +109,10 @@ siempre de secundaria.
 
 | Clase | Estados Unidos | Reino Unido | Unión Soviética | Alemania |
 |---|---|---|---|---|
-| Fusilero | M1 Garand · M1903 Springfield (nv. 2) · M1 Carbine (nv. 6) | Lee-Enfield | Mosin-Nagant · SVT-40 (nv. 6) | Kar98k · Gewehr 43 (nv. 6) |
-| Asalto | Thompson · M3 Grease Gun (nv. 4) | Sten · Sten Mk V (nv. 4) | PPSh-41 · PPS-43 (nv. 4) | MP40 · StG 44 (nv. 4) |
-| Apoyo (nv. 3) | BAR | Bren | DP-28 | FG 42 (nv. 8) |
-| Francotirador (nv. 5) | Springfield con mira | Lee-Enfield con mira | Mosin-Nagant con mira | Kar98k con mira |
+| Fusilero | M1 Garand · M1903 Springfield · M1 Carbine | Lee-Enfield | Mosin-Nagant · SVT-40 | Kar98k · Gewehr 43 |
+| Asalto | Thompson · M3 Grease Gun | Sten · Sten Mk V | PPSh-41 · PPS-43 | MP40 · StG 44 |
+| Apoyo | BAR | Bren | DP-28 | FG 42 |
+| Francotirador | Springfield con mira | Lee-Enfield con mira | Mosin-Nagant con mira | Kar98k con mira |
 | Pistola | Colt M1911 | Webley | Tokarev TT-33 | Luger P08 · Walther P38 |
 | Ametralladora montada | M1919 Browning | Vickers | Maxim | MG42 |
 
@@ -128,13 +128,9 @@ además una **granada de humo** (tecla **H**) que tapa la vista durante 24 s, ta
 Cada arma tiene su cadencia, su daño y su retroceso (vertical y lateral). Con la mira
 telescópica el pulso se mueve: agáchate o aguanta la respiración con **Shift**.
 
-**Ventajas:** Granadero (una granada más), Pulmones de acero (nv. 2, corres el doble),
-Cartucheras (nv. 4, +50 % de munición), Manos rápidas (nv. 7, recargas un 30 % antes),
-Pulso firme (nv. 9) y Piel dura (nv. 12, −20 % de daño de bala).
-
-**Rangos:** cada baja, disparo a la cabeza, objetivo, victoria u oleada da experiencia. Hay 20
-rangos, de Soldado raso a Mariscal de campo; al subir se desbloquean armas y ventajas. La
-experiencia se guarda en tu equipo.
+**Ventajas:** Granadero (una granada más), Pulmones de acero (corres el doble), Cartucheras
+(+50 % de munición), Manos rápidas (recargas un 30 % antes), Pulso firme y Piel dura (−20 % de
+daño de bala). Como en CoD2, no hay rangos ni desbloqueos: todo está disponible desde el principio.
 
 **Sin barra de salud**, como en CoD2: al recibir daño la pantalla se tiñe de sangre, se
 emborrona y oyes el corazón; si te cubres unos segundos te recuperas. Las granadas que caen
