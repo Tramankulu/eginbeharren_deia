@@ -37,6 +37,12 @@ pub struct FrameInput {
     pub use_key: bool,
     pub slot: Option<u8>,
     pub next_slot: bool,
+    /// Culatazo (flanco)
+    pub melee: bool,
+    /// Granada de humo (flanco)
+    pub smoke: bool,
+    /// Coger o soltar la ametralladora montada (flanco)
+    pub mount: bool,
 }
 
 /// Efectos del propio jugador predichos localmente (sin esperar al servidor).
@@ -48,6 +54,8 @@ pub enum LocalFx {
     Dry,
     Throw,
     Switch,
+    Melee,
+    Mount,
 }
 
 pub fn resolve(addr: &str) -> Option<SocketAddr> {
@@ -345,6 +353,15 @@ impl NetClient {
         if inp.grenade {
             self.edges |= btn::GRENADE;
         }
+        if inp.melee {
+            self.edges |= btn::MELEE;
+        }
+        if inp.smoke {
+            self.edges |= btn::SMOKE;
+        }
+        if inp.mount {
+            self.edges |= btn::MOUNT;
+        }
         if let Some(s) = inp.slot {
             self.slot = s.min(1);
         }
@@ -415,6 +432,12 @@ impl NetClient {
                 if out.switched {
                     self.local.push(LocalFx::Switch);
                 }
+                if out.melee.is_some() {
+                    self.local.push(LocalFx::Melee);
+                }
+                if out.mount.is_some() {
+                    self.local.push(LocalFx::Mount);
+                }
             }
             self.pending.push_back(cmd);
             while self.pending.len() > 180 {
@@ -435,6 +458,7 @@ impl NetClient {
         w.u8(self.loadout.class);
         w.u8(self.loadout.primary);
         w.u8(self.loadout.perk);
+        w.u8(self.loadout.secondary);
         w.u8(self.level);
         match self.chat_pending.as_mut() {
             Some((team_only, text, left)) => {

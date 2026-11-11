@@ -1996,6 +1996,8 @@ pub struct ViewParams {
     pub gun: u8,
     /// Nación (color de las mangas)
     pub nation: u8,
+    /// Avance del culatazo (0..1; 0 = sin culatazo)
+    pub melee: f32,
     pub ads: f32,
     pub bob: f32,
     pub moving: f32,
@@ -2009,9 +2011,14 @@ pub struct ViewParams {
 /// Arma en primera persona, construida en el espacio de la cámara.
 pub fn viewmodel(g: &mut Geo, eye: V3, fwd: V3, right: V3, up: V3, v: &ViewParams) {
     let ads = v.ads;
-    let hip = v3(0.2, -0.2, 0.42);
-    let aim = v3(0.0, -0.053, 0.31);
+    let mounted = crate::sim::gun(v.gun).kind == crate::sim::GunKind::Mounted;
+    let (hip, aim) = if mounted { (v3(0.0, -0.11, 0.3), v3(0.0, -0.035, 0.2)) } else { (v3(0.2, -0.2, 0.42), v3(0.0, -0.053, 0.31)) };
     let mut off = hip.lerp(aim, ads);
+    // Culatazo: el arma sale hacia delante y a la izquierda
+    let mk = (v.melee * PI).sin();
+    off.z += mk * 0.22;
+    off.x -= mk * 0.12;
+    off.y += mk * 0.04;
     let b = 1.0 - ads * 0.85;
     off.x += v.bob.sin() * 0.012 * v.moving * b;
     off.y += -(v.bob.cos().abs()) * 0.01 * v.moving * b;
@@ -2169,6 +2176,35 @@ pub fn viewmodel(g: &mut Geo, eye: V3, fwd: V3, right: V3, up: V3, v: &ViewParam
             tip = at(0.0, -0.02, if stg { 0.52 } else { 0.68 });
             left = at(-0.012, -0.06, 0.3);
         }
+        K::Mounted => {
+            // Ametralladora pesada sobre su trípode, agarrada por las asas
+            g.set(m::METAL);
+            let mg42 = name == "MG42";
+            let water = name == "Vickers" || name == "Maxim";
+            g.obox(at(0.0, -0.03, 0.08), ax, [0.04, 0.05, 0.16], metal);
+            if water {
+                g.cylinder(at(0.0, -0.03, 0.24), at(0.0, -0.03, 0.62), 0.045, 0.045, 12, [0.3, 0.32, 0.28, 1.0], true);
+            } else {
+                // Camisa perforada
+                g.cylinder(at(0.0, -0.025, 0.24), at(0.0, -0.025, 0.66), 0.028, 0.028, 10, metal, true);
+                for k in 0..5 {
+                    g.obox(at(0.0, -0.025, 0.3 + k as f32 * 0.07), ax, [0.03, 0.006, 0.012], shade(metal, 0.6));
+                }
+            }
+            if mg42 {
+                g.set(m::WOOD);
+                g.obox(at(0.0, -0.05, -0.14), ax, [0.02, 0.04, 0.1], [0.30, 0.22, 0.15, 1.0]);
+                g.set(m::METAL);
+            }
+            // Cinta de munición
+            g.obox(at(-0.07, -0.05, 0.08), ax, [0.03, 0.012, 0.03], [0.62, 0.5, 0.25, 1.0]);
+            g.obox(at(-0.12, -0.09, 0.08), ax, [0.03, 0.04, 0.012], [0.62, 0.5, 0.25, 1.0]);
+            // Alza y punto de mira
+            g.obox(at(0.0, 0.03, 0.05), ax, [0.004, 0.02, 0.004], metal);
+            g.obox(at(0.0, 0.012, 0.6), ax, [0.003, 0.014, 0.004], metal);
+            tip = at(0.0, -0.025, 0.7);
+            left = at(-0.06, -0.06, -0.05);
+        }
         K::Pistol | K::Melee => {
             g.set(m::METAL);
             let len = if name == "Webley" { 0.2 } else { 0.15 };
@@ -2275,4 +2311,66 @@ pub fn hq_radio(g: &mut Geo, pos: V3, owner: Option<u8>, t: f32) {
     let r = V3::right_of_yaw(wave);
     g.obox(pos + v3(0.25, 2.95, 0.0) + f * 0.3, [r, V3::UP, f], [0.01, 0.16, 0.28], c);
     g.set(m::PLAIN);
+}
+
+
+/// Ametralladora pesada montada (vista desde fuera), girada hacia `yaw`.
+pub fn turret(g: &mut Geo, pos: V3, yaw: f32, pitch: f32, gun: u8) {
+    let name = crate::sim::gun(gun).name;
+    let metal = [0.22, 0.23, 0.24, 1.0];
+    let f0 = V3::from_yaw(yaw);
+    let r = V3::right_of_yaw(yaw);
+    let f = (f0 * pitch.cos() + V3::UP * pitch.sin()).norm();
+    let u = r.cross(f).norm() * -1.0;
+    let u = if u.y < 0.0 { -u } else { u };
+    let ax = [r, u, f];
+    g.set(m::METAL);
+    // Trípode
+    for (dx, dz) in [(-0.35f32, -0.35f32), (0.35, -0.35), (0.0, 0.4)] {
+        g.cylinder(pos, pos + r * dx + f0 * dz - V3::UP * 0.14, 0.022, 0.018, 5, metal, false);
+    }
+    let at = |x: f32, y: f32, z: f32| pos + r * x + u * y + f * z;
+    g.obox(at(0.0, 0.08, -0.1), ax, [0.07, 0.08, 0.26], metal);
+    g.obox(at(0.0, 0.05, -0.42), ax, [0.04, 0.06, 0.08], if name == "MG42" { [0.30, 0.22, 0.15, 1.0] } else { metal });
+    let water = name == "Vickers" || name == "Maxim";
+    if water {
+        g.cylinder(at(0.0, 0.08, 0.15), at(0.0, 0.08, 0.75), 0.07, 0.07, 12, [0.3, 0.32, 0.28, 1.0], true);
+    } else {
+        g.cylinder(at(0.0, 0.09, 0.15), at(0.0, 0.09, 0.85), 0.045, 0.045, 10, metal, true);
+        g.cylinder(at(0.0, 0.09, 0.85), at(0.0, 0.09, 0.95), 0.02, 0.02, 8, metal, true);
+    }
+    if name == "Maxim" {
+        // Escudo
+        g.obox(at(0.0, 0.12, 0.25), ax, [0.28, 0.25, 0.01], [0.32, 0.38, 0.26, 1.0]);
+    }
+    g.obox(at(-0.08, 0.04, 0.0), ax, [0.03, 0.03, 0.04], [0.62, 0.5, 0.25, 1.0]);
+    g.set(m::PLAIN);
+}
+
+/// Granada de mano con la forma de su nación.
+pub fn grenade_of(g: &mut Geo, pos: V3, spin: f32, nation: u8, smoke: bool) {
+    use crate::sim::nation as na;
+    if smoke {
+        g.set(m::METAL);
+        let a = V3::from_yaw(spin);
+        g.cylinder(pos - V3::UP * 0.07, pos + V3::UP * 0.07, 0.035, 0.035, 8, [0.55, 0.57, 0.52, 1.0], true);
+        let _ = a;
+        g.set(m::PLAIN);
+        return;
+    }
+    match nation {
+        na::DE => grenade(g, pos, spin, false),
+        na::RU => {
+            g.set(m::METAL);
+            g.cylinder(pos - V3::UP * 0.06, pos + V3::UP * 0.05, 0.04, 0.04, 8, [0.30, 0.34, 0.24, 1.0], true);
+            g.cylinder(pos + V3::UP * 0.05, pos + V3::UP * 0.09, 0.015, 0.015, 6, [0.5, 0.5, 0.45, 1.0], true);
+            g.set(m::PLAIN);
+        }
+        na::UK => {
+            g.set(m::METAL);
+            g.sphere(pos, v3(0.05, 0.065, 0.05), [0.36, 0.34, 0.24, 1.0]);
+            g.set(m::PLAIN);
+        }
+        _ => grenade(g, pos, spin, true),
+    }
 }

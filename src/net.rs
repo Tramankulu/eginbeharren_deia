@@ -3,7 +3,7 @@
 use crate::math::*;
 use crate::sim::{Ammo, Cmd, PState};
 
-pub const PROTOCOL: u16 = 2;
+pub const PROTOCOL: u16 = 3;
 pub const DEFAULT_PORT: u16 = 28960;
 pub const MAGIC: [u8; 2] = *b"ED";
 /// Una instantánea cada 3 ticks = 20 por segundo.
@@ -267,6 +267,8 @@ pub mod weapon {
     pub const SUICIDE: u8 = 202;
     /// Mordisco o zarpazo de zombi
     pub const MELEE: u8 = 203;
+    /// Culatazo o cuchillada
+    pub const BASH: u8 = 204;
 }
 
 /// Motivo de una recompensa de experiencia.
@@ -307,6 +309,10 @@ pub enum Ev {
     Xp { who: u8, amount: u16, reason: u8 },
     /// Un zombi gruñe o ataca
     Growl { who: u8, pos: V3, attack: bool },
+    /// Culatazo (y si ha dado a alguien)
+    Melee { who: u8, pos: V3, hit: bool },
+    /// Una granada de humo empieza a echar humo
+    Smoke { pos: V3 },
 }
 
 pub mod tone {
@@ -393,6 +399,16 @@ impl Ev {
                 w.v3(*pos);
                 w.bool(*attack);
             }
+            Ev::Melee { who, pos, hit } => {
+                w.u8(14);
+                w.u8(*who);
+                w.v3(*pos);
+                w.bool(*hit);
+            }
+            Ev::Smoke { pos } => {
+                w.u8(15);
+                w.v3(*pos);
+            }
         }
     }
     pub fn read(r: &mut R) -> Option<Ev> {
@@ -418,6 +434,8 @@ impl Ev {
             11 => Ev::Whistle,
             12 => Ev::Xp { who: r.u8()?, amount: r.u16()?, reason: r.u8()? },
             13 => Ev::Growl { who: r.u8()?, pos: r.v3()?, attack: r.bool()? },
+            14 => Ev::Melee { who: r.u8()?, pos: r.v3()?, hit: r.bool()? },
+            15 => Ev::Smoke { pos: r.v3()? },
             _ => return None,
         })
     }
@@ -466,6 +484,11 @@ pub fn write_pstate(w: &mut W, p: &PState) {
     w.u8(p.guns[1]);
     w.u8(p.nation);
     w.u8(p.perk);
+    w.u8(p.smokes);
+    w.f32(p.melee_t);
+    w.u8(p.mounted);
+    w.f32(p.heat);
+    w.bool(p.overheated);
     w.u8(p.slot);
     w.f32(p.cooldown);
     w.f32(p.reload_t);
@@ -496,10 +519,20 @@ pub fn read_pstate(r: &mut R) -> Option<PState> {
     let guns = [r.u8()?, r.u8()?];
     let nation = r.u8()?;
     let perk = r.u8()?;
+    let smokes = r.u8()?;
+    let melee_t = r.f32()?;
+    let mounted = r.u8()?;
+    let heat = r.f32()?;
+    let overheated = r.bool()?;
     Some(PState {
         guns,
         nation,
         perk,
+        smokes,
+        melee_t,
+        mounted,
+        heat,
+        overheated,
         pos,
         vel,
         yaw,
@@ -545,6 +578,10 @@ pub struct PlayerInfo {
     /// Nivel (rango) del jugador
     pub level: u8,
     pub bot: bool,
+    /// Ametralladora montada que usa (255 = ninguna)
+    pub mounted: u8,
+    /// Dando un culatazo
+    pub melee: bool,
     pub pos: V3,
     pub yaw: f32,
     pub pitch: f32,
@@ -568,6 +605,8 @@ impl PlayerInfo {
         w.u8(self.gun);
         w.u8(self.nation);
         w.u8(self.level);
+        w.u8(self.mounted);
+        w.bool(self.melee);
         w.v3(self.pos);
         w.angle(self.yaw);
         w.angle(self.pitch);
@@ -598,6 +637,8 @@ impl PlayerInfo {
             gun: r.u8()?,
             nation: r.u8()?,
             level: r.u8()?,
+            mounted: r.u8()?,
+            melee: r.bool()?,
             pos: r.v3()?,
             yaw: r.angle()?,
             pitch: r.angle()?,
@@ -635,6 +676,8 @@ pub struct GrenadeInfo {
     pub id: u16,
     pub pos: V3,
     pub side: u8,
+    pub nation: u8,
+    pub smoke: bool,
 }
 
 /// Instantánea del servidor tal y como la recibe un cliente concreto.
@@ -672,6 +715,8 @@ pub struct Snapshot {
     pub me: Option<PState>,
     pub players: Vec<PlayerInfo>,
     pub grenades: Vec<GrenadeInfo>,
+    /// Nubes de humo: (posición, segundos desde que empezaron)
+    pub smokes: Vec<(V3, f32)>,
     pub events: Vec<(u32, Ev)>,
 }
 
@@ -734,6 +779,13 @@ impl Snapshot {
             w.u16(g.id);
             w.v3(g.pos);
             w.u8(g.side);
+            w.u8(g.nation);
+            w.bool(g.smoke);
+        }
+        w.u8(self.smokes.len().min(16) as u8);
+        for (p, t) in self.smokes.iter().take(16) {
+            w.v3(*p);
+            w.f32(*t);
         }
         // Eventos: contador al final, se rellena según el espacio
         let count_at = w.len();
@@ -792,7 +844,12 @@ impl Snapshot {
         let ng = r.u8()? as usize;
         let mut grenades = Vec::with_capacity(ng);
         for _ in 0..ng {
-            grenades.push(GrenadeInfo { id: r.u16()?, pos: r.v3()?, side: r.u8()? });
+            grenades.push(GrenadeInfo { id: r.u16()?, pos: r.v3()?, side: r.u8()?, nation: r.u8()?, smoke: r.bool()? });
+        }
+        let ns = r.u8()? as usize;
+        let mut smokes = Vec::with_capacity(ns);
+        for _ in 0..ns {
+            smokes.push((r.v3()?, r.f32()?));
         }
         let ne = r.u8()? as usize;
         let mut events = Vec::with_capacity(ne);
@@ -829,6 +886,7 @@ impl Snapshot {
             me,
             players,
             grenades,
+            smokes,
             events,
         })
     }

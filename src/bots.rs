@@ -43,6 +43,21 @@ pub struct BotView {
     pub hq_state: u8,
     pub hq_pos: V3,
     pub hq_owner: u8,
+    /// Nubes de humo activas (centro)
+    pub smokes: Vec<V3>,
+}
+
+impl BotView {
+    /// ¿Tapa el humo la línea entre dos puntos?
+    pub fn smoke_blocks(&self, a: V3, b: V3) -> bool {
+        let r = crate::server::SMOKE_RADIUS * 0.8;
+        self.smokes.iter().any(|&c| {
+            let c = c + V3::UP * 1.5;
+            let d = b - a;
+            let t = ((c - a).dot(d) / d.len_sq().max(1e-6)).clamp(0.0, 1.0);
+            (a + d * t).dist(c) < r
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -207,7 +222,7 @@ impl Brain {
             }
             let dir = (chest - eye) / d.max(0.01);
             let in_fov = dir.dot(fwd) > FOV_COS || d < 9.0 || self.zombie;
-            if in_fov && world.los(eye, chest) {
+            if in_fov && world.los(eye, chest) && !v.smoke_blocks(eye, chest) {
                 // Preferir al más cercano y al que ya teníamos
                 let score = d - if Some(p.id) == self.target { 8.0 } else { 0.0 };
                 if best.map(|b| score < b.1).unwrap_or(true) {
@@ -428,6 +443,12 @@ impl Brain {
             cmd.strafe = 0;
         }
 
+        // ---- Culatazo si está encima ----
+        if let Some(t) = &target {
+            if t.pos.dist_flat(ps.pos) < 1.5 && ps.melee_t <= 0.0 && self.rng.chance(0.15) {
+                cmd.buttons |= btn::MELEE;
+            }
+        }
         // ---- Disparar ----
         if wants_fire {
             if def.auto {

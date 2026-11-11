@@ -171,7 +171,22 @@ enum Side {
     E,
 }
 
+/// Ametralladora pesada montada sobre un parapeto.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Turret {
+    /// Donde está el arma (a la altura del parapeto)
+    pub pos: V3,
+    /// Donde se pone quien dispara
+    pub stand: V3,
+    /// Hacia dónde apunta en reposo
+    pub yaw: f32,
+    /// Bando al que pertenece el nido (decide el modelo)
+    pub side: u8,
+}
+
 pub struct World {
+    /// Ametralladoras montadas
+    pub turrets: Vec<Turret>,
     pub blocks: Vec<Block>,
     pub props: Vec<Prop>,
     pub decals: Vec<Decal>,
@@ -538,6 +553,7 @@ impl World {
     /// Saint-Aubin: el pueblo del juego.
     pub fn village() -> World {
         let mut w = World {
+            turrets: Vec::new(),
             blocks: Vec::new(),
             props: Vec::new(),
             decals: Vec::new(),
@@ -625,6 +641,11 @@ impl World {
 
         // Sacos terreros
         let sb = 1.05;
+        // Nidos de ametralladora tras los parapetos de cada bando
+        for x in [-6.0f32, 6.0] {
+            w.turrets.push(Turret { pos: v3(x, sb + 0.12, -42.2), stand: v3(x, 0.0, -43.35), yaw: std::f32::consts::FRAC_PI_2, side: 0 });
+            w.turrets.push(Turret { pos: v3(x, sb + 0.12, 48.0), stand: v3(x, 0.0, 49.15), yaw: -std::f32::consts::FRAC_PI_2, side: 1 });
+        }
         w.sandbags(v3(-9.0, 0.0, -42.6), v3(-3.0, sb, -41.8));
         w.sandbags(v3(3.0, 0.0, -42.6), v3(9.0, sb, -41.8));
         w.sandbags(v3(-10.0, 0.0, 47.6), v3(-2.0, sb, 48.4));
@@ -902,6 +923,7 @@ impl World {
         let s = scale;
         let at = |k: usize| v3(g[k][12] * s, g[k][13] * s, g[k][14] * s);
         let mut w = World {
+            turrets: Vec::new(),
             blocks: Vec::new(),
             props: Vec::new(),
             decals: Vec::new(),
@@ -971,6 +993,13 @@ impl World {
                 bombs[0] = Some(p);
             } else if name.starts_with("BOMBA_B") {
                 bombs[1] = Some(p);
+            } else if name.starts_with("AMETRALLADORA") {
+                // El +Z del objeto es hacia donde apunta
+                let m = g[k];
+                let f = v3(m[8], 0.0, m[10]).norm();
+                let yaw = f.yaw();
+                let side = if name.contains("EJE") { 1 } else { 0 };
+                w.turrets.push(Turret { pos: p, stand: v3(p.x, 0.0, p.z) - f * 1.15, yaw, side });
             } else if name.starts_with("PASO") {
                 w.waypoints.push(v3(p.x, p.y.max(0.0), p.z));
             } else if name.starts_with("LIMITE") {

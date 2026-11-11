@@ -129,6 +129,8 @@ fn serializacion_ida_y_vuelta() {
             nation: nation::RU,
             level: 12,
             bot: true,
+            mounted: 2,
+            melee: true,
             pos: v3(4.0, 0.0, -6.0),
             yaw: 1.0,
             pitch: -0.2,
@@ -138,7 +140,8 @@ fn serializacion_ida_y_vuelta() {
             score: 7,
             ping: 35,
         }],
-        grenades: vec![GrenadeInfo { id: 9, pos: v3(1.0, 1.0, 1.0), side: 0 }],
+        grenades: vec![GrenadeInfo { id: 9, pos: v3(1.0, 1.0, 1.0), side: 0, nation: 2, smoke: true }],
+        smokes: vec![(v3(4.0, 0.0, 4.0), 3.5)],
         events: vec![
             (5, Ev::Kill { killer: 1, victim: 2, weapon: 3, head: true, killer_name: "a".into(), victim_name: "b".into() }),
             (6, Ev::Chat { from: 1, team_only: false, name: "a".into(), text: "¡hola!".into() }),
@@ -289,7 +292,7 @@ fn bandera_cae_al_morir() {
     s.slots[id].as_mut().unwrap().ps.pos = v3(0.0, 0.0, 20.0);
     // Granada a sus pies
     let gid = 999;
-    s.grenades.push(Grenade { id: gid, pos: v3(0.0, 0.2, 20.0), vel: V3::ZERO, fuse: 0.05, owner: id as u8, side: 0, bounce_cd: 0.0 });
+    s.grenades.push(Grenade { id: gid, pos: v3(0.0, 0.2, 20.0), vel: V3::ZERO, fuse: 0.05, owner: id as u8, side: 0, bounce_cd: 0.0, nation: 0, smoke: false });
     run(&mut s, &mut cs, &world, 10, idle);
     assert!(!s.slots[id].as_ref().unwrap().alive);
     assert_eq!(s.flags[enemy].state, flag_state::DROPPED);

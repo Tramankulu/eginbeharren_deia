@@ -109,11 +109,21 @@ siempre de secundaria.
 
 | Clase | Estados Unidos | Reino Unido | Unión Soviética | Alemania |
 |---|---|---|---|---|
-| Fusilero | M1 Garand · M1 Carbine (nv. 6) | Lee-Enfield | Mosin-Nagant · SVT-40 (nv. 6) | Kar98k · Gewehr 43 (nv. 6) |
-| Asalto | Thompson | Sten | PPSh-41 | MP40 |
-| Apoyo (nv. 3) | BAR | Bren | DP-28 | StG 44 |
+| Fusilero | M1 Garand · M1903 Springfield (nv. 2) · M1 Carbine (nv. 6) | Lee-Enfield | Mosin-Nagant · SVT-40 (nv. 6) | Kar98k · Gewehr 43 (nv. 6) |
+| Asalto | Thompson · M3 Grease Gun (nv. 4) | Sten · Sten Mk V (nv. 4) | PPSh-41 · PPS-43 (nv. 4) | MP40 · StG 44 (nv. 4) |
+| Apoyo (nv. 3) | BAR | Bren | DP-28 | FG 42 (nv. 8) |
 | Francotirador (nv. 5) | Springfield con mira | Lee-Enfield con mira | Mosin-Nagant con mira | Kar98k con mira |
-| Pistola | Colt M1911 | Webley | Tokarev TT-33 | Luger P08 |
+| Pistola | Colt M1911 | Webley | Tokarev TT-33 | Luger P08 · Walther P38 |
+| Ametralladora montada | M1919 Browning | Vickers | Maxim | MG42 |
+
+**Ametralladoras montadas:** en los nidos tras los sacos terreros de cada bando. Acércate y pulsa
+**F** para usarla (y otra vez F o salta para soltarla): gira hasta unos 60° a cada lado, no se
+acaba la munición pero el cañón se recalienta si disparas demasiado seguido. En los escenarios de
+Blender se colocan con objetos llamados `AMETRALLADORA_ALIADOS` o `AMETRALLADORA_EJE`.
+
+**Granadas:** cada nación tiene la suya (Mk 2, Mills, RG-42 y la de mango alemana), y todos llevan
+además una **granada de humo** (tecla **H**) que tapa la vista durante 24 s, también a los bots.
+**Culatazo** con **V** (o el botón central del ratón): mata de un golpe a quemarropa.
 
 Cada arma tiene su cadencia, su daño y su retroceso (vertical y lateral). Con la mira
 telescópica el pulso se mueve: agáchate o aguanta la respiración con **Shift**.
@@ -142,7 +152,10 @@ derecha según de dónde vengan.
 | 1 / 2, Q o rueda | Cambiar de arma |
 | G | Granada |
 | F | Devolver una granada · mantener: colocar / desactivar bomba |
-| L | Equipamiento: clase, arma y ventaja |
+| L | Equipamiento: clase, arma, pistola y ventaja |
+| V o botón central | Culatazo |
+| H o 4 | Granada de humo |
+| F junto a un nido | Usar / soltar la ametralladora montada |
 | Shift con la mira telescópica | Aguantar la respiración |
 | C o Ctrl | Agacharse · Espacio salta · Shift corre |
 | Tab | Marcador |

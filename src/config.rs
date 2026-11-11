@@ -31,6 +31,7 @@ pub struct Settings {
     pub class: u8,
     pub primary: u8,
     pub perk: u8,
+    pub secondary: u8,
 }
 
 impl Default for Settings {
@@ -55,6 +56,7 @@ impl Default for Settings {
             class: 0,
             primary: 255,
             perk: 0,
+            secondary: 255,
         }
     }
 }
@@ -110,6 +112,7 @@ impl Settings {
                 "clase" => s.class = v.parse().unwrap_or(0),
                 "arma" => s.primary = v.parse().unwrap_or(255),
                 "ventaja" => s.perk = v.parse().unwrap_or(0),
+                "pistola" => s.secondary = v.parse().unwrap_or(255),
                 _ => {}
             }
         }
@@ -127,7 +130,7 @@ impl Settings {
     pub fn to_text(&self) -> String {
         let mut t = self.base_text();
         t.push_str(&format!(
-            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nmusica={:.2}\nexperiencia={}\nclase={}\narma={}\nventaja={}\n",
+            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nmusica={:.2}\nexperiencia={}\nclase={}\narma={}\nventaja={}\npistola={}\n",
             self.host_bots,
             self.host_bot_skill,
             crate::sim::nation_short(self.host_nation),
@@ -135,7 +138,8 @@ impl Settings {
             self.xp,
             self.class,
             self.primary,
-            self.perk
+            self.perk,
+            self.secondary
         ));
         t
     }

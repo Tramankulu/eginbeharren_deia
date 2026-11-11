@@ -742,3 +742,45 @@ pub fn menu_music() -> Vec<f32> {
     }
     normalize(seamless(v, (1.5 * RATE as f32) as usize), 0.5)
 }
+
+/// Barrido del culatazo.
+pub fn swing() -> Vec<f32> {
+    let mut r = Rng::new(150);
+    let mut lp = Lp::new(900.0);
+    let mut hp = Hp::new(300.0);
+    normalize(
+        gen(0.28, |t| {
+            let env = (-((t - 0.1) / 0.05).powi(2)).exp();
+            hp.run(lp.run(r.f() * 2.0 - 1.0)) * env
+        }),
+        0.35,
+    )
+}
+
+/// Golpe seco del culatazo al dar.
+pub fn bash() -> Vec<f32> {
+    let mut r = Rng::new(151);
+    let mut lp = Lp::new(700.0);
+    normalize(
+        gen(0.3, |t| {
+            let thud = lp.run(r.f() * 2.0 - 1.0) * 3.0 * (-t / 0.04).exp();
+            let wood = (TAU * 260.0 * t).sin() * (-t / 0.03).exp();
+            (thud + wood) * (t / 0.001).min(1.0)
+        }),
+        0.8,
+    )
+}
+
+/// Siseo de la granada de humo.
+pub fn smoke_hiss() -> Vec<f32> {
+    let mut r = Rng::new(152);
+    let mut hp = Hp::new(2500.0);
+    let mut lp = Lp::new(7000.0);
+    normalize(
+        gen(3.5, |t| {
+            let env = (t / 0.08).min(1.0) * (1.0 - (t / 3.5).powi(2)).max(0.0) * (0.8 + 0.2 * (t * 13.0).sin());
+            lp.run(hp.run(r.f() * 2.0 - 1.0)) * env
+        }),
+        0.35,
+    )
+}

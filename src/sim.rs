@@ -88,6 +88,8 @@ pub enum GunKind {
     Pistol,
     /// Garras (zombis)
     Melee,
+    /// Ametralladora pesada montada en un nido
+    Mounted,
 }
 
 pub struct GunDef {
@@ -155,7 +157,7 @@ macro_rules! gun {
 use nation::{DE, RU, UK, US};
 
 /// Arsenal completo. Los cuatro primeros conservan su número de siempre.
-pub const GUNS: [GunDef; 24] = [
+pub const GUNS: [GunDef; 34] = [
     gun!("M1 Garand", Rifle, US, mag 8, res 48, int 0.2, auto false, dmg 105.0, head 2.0, hip 0.045, ads 0.0015, mov 0.03, bloom 0.0, kick 0.045, side 0.012, rel 2.3, rele 2.0, fall 1.0, fov 45.0, lvl 1),
     gun!("Thompson", Smg, US, mag 30, res 120, int 0.086, auto true, dmg 34.0, head 2.2, hip 0.04, ads 0.012, mov 0.025, bloom 0.004, kick 0.012, side 0.010, rel 2.6, rele 3.0, fall 0.7, fov 55.0, lvl 1),
     gun!("Kar98k", Rifle, DE, mag 5, res 30, int 1.15, auto false, dmg 125.0, head 2.0, hip 0.06, ads 0.0008, mov 0.035, bloom 0.0, kick 0.07, side 0.014, rel 2.4, rele 2.8, fall 1.0, fov 40.0, lvl 1),
@@ -167,7 +169,7 @@ pub const GUNS: [GunDef; 24] = [
     gun!("BAR", Support, US, mag 20, res 100, int 0.13, auto true, dmg 48.0, head 2.0, hip 0.055, ads 0.009, mov 0.04, bloom 0.006, kick 0.026, side 0.012, rel 2.8, rele 3.2, fall 0.85, fov 50.0, lvl 3),
     gun!("Bren", Support, UK, mag 30, res 90, int 0.12, auto true, dmg 46.0, head 2.0, hip 0.055, ads 0.008, mov 0.04, bloom 0.006, kick 0.022, side 0.010, rel 3.0, rele 3.4, fall 0.85, fov 50.0, lvl 3),
     gun!("DP-28", Support, RU, mag 47, res 94, int 0.11, auto true, dmg 44.0, head 2.0, hip 0.06, ads 0.010, mov 0.042, bloom 0.006, kick 0.022, side 0.012, rel 3.6, rele 4.0, fall 0.85, fov 50.0, lvl 3),
-    gun!("StG 44", Support, DE, mag 30, res 120, int 0.1, auto true, dmg 40.0, head 2.0, hip 0.048, ads 0.008, mov 0.032, bloom 0.005, kick 0.019, side 0.011, rel 2.6, rele 3.0, fall 0.8, fov 50.0, lvl 3),
+    gun!("StG 44", Smg, DE, mag 30, res 120, int 0.1, auto true, dmg 40.0, head 2.0, hip 0.048, ads 0.008, mov 0.032, bloom 0.005, kick 0.019, side 0.011, rel 2.6, rele 3.0, fall 0.8, fov 50.0, lvl 4),
     gun!("M1 Carbine", Semi, US, mag 15, res 75, int 0.14, auto false, dmg 55.0, head 2.0, hip 0.04, ads 0.004, mov 0.028, bloom 0.004, kick 0.024, side 0.010, rel 2.0, rele 2.3, fall 0.8, fov 50.0, lvl 6),
     gun!("Gewehr 43", Semi, DE, mag 10, res 60, int 0.2, auto false, dmg 80.0, head 2.0, hip 0.048, ads 0.0025, mov 0.03, bloom 0.004, kick 0.04, side 0.012, rel 2.6, rele 3.0, fall 0.95, fov 45.0, lvl 6),
     gun!("SVT-40", Semi, RU, mag 10, res 60, int 0.19, auto false, dmg 80.0, head 2.0, hip 0.05, ads 0.0025, mov 0.03, bloom 0.004, kick 0.042, side 0.014, rel 2.6, rele 3.0, fall 0.95, fov 45.0, lvl 6),
@@ -180,7 +182,29 @@ pub const GUNS: [GunDef; 24] = [
     gun!("Tokarev TT-33", Pistol, RU, mag 8, res 32, int 0.16, auto false, dmg 40.0, head 2.0, hip 0.034, ads 0.011, mov 0.02, bloom 0.006, kick 0.028, side 0.012, rel 1.6, rele 1.9, fall 0.6, fov 62.0, lvl 1),
     gun!("Luger P08", Pistol, DE, mag 8, res 32, int 0.15, auto false, dmg 40.0, head 2.0, hip 0.033, ads 0.011, mov 0.02, bloom 0.006, kick 0.026, side 0.010, rel 1.6, rele 1.9, fall 0.6, fov 62.0, lvl 1),
     gun!("Garras", Melee, nation::ZOMBIE, mag 0, res 0, int 1.0, auto false, dmg 0.0, head 1.0, hip 0.0, ads 0.0, mov 0.0, bloom 0.0, kick 0.0, side 0.0, rel 1.0, rele 1.0, fall 1.0, fov 70.0, lvl 1),
+    gun!("Walther P38", Pistol, DE, mag 8, res 32, int 0.16, auto false, dmg 42.0, head 2.0, hip 0.034, ads 0.011, mov 0.02, bloom 0.006, kick 0.028, side 0.011, rel 1.7, rele 2.0, fall 0.6, fov 62.0, lvl 1),
+    gun!("M3 Grease Gun", Smg, US, mag 30, res 120, int 0.133, auto true, dmg 36.0, head 2.2, hip 0.036, ads 0.010, mov 0.022, bloom 0.003, kick 0.009, side 0.007, rel 2.7, rele 3.1, fall 0.7, fov 55.0, lvl 4),
+    gun!("Sten Mk V", Smg, UK, mag 32, res 128, int 0.11, auto true, dmg 31.0, head 2.2, hip 0.038, ads 0.011, mov 0.024, bloom 0.0035, kick 0.010, side 0.008, rel 2.5, rele 2.9, fall 0.7, fov 55.0, lvl 4),
+    gun!("PPS-43", Smg, RU, mag 35, res 140, int 0.086, auto true, dmg 29.0, head 2.1, hip 0.04, ads 0.012, mov 0.025, bloom 0.004, kick 0.011, side 0.010, rel 2.4, rele 2.8, fall 0.68, fov 55.0, lvl 4),
+    gun!("FG 42", Support, DE, mag 20, res 100, int 0.08, auto true, dmg 44.0, head 2.0, hip 0.058, ads 0.009, mov 0.04, bloom 0.007, kick 0.028, side 0.016, rel 2.7, rele 3.1, fall 0.85, fov 48.0, lvl 8),
+    gun!("M1903 Springfield", Rifle, US, mag 5, res 30, int 1.1, auto false, dmg 125.0, head 2.0, hip 0.06, ads 0.0008, mov 0.035, bloom 0.0, kick 0.07, side 0.014, rel 2.4, rele 2.8, fall 1.0, fov 40.0, lvl 2),
+    gun!("MG42", Mounted, DE, mag 999, res 0, int 0.05, auto true, dmg 45.0, head 2.0, hip 0.014, ads 0.008, mov 0.0, bloom 0.002, kick 0.006, side 0.008, rel 1.0, rele 1.0, fall 0.9, fov 50.0, lvl 1),
+    gun!("M1919 Browning", Mounted, US, mag 999, res 0, int 0.11, auto true, dmg 48.0, head 2.0, hip 0.012, ads 0.007, mov 0.0, bloom 0.002, kick 0.005, side 0.006, rel 1.0, rele 1.0, fall 0.9, fov 50.0, lvl 1),
+    gun!("Vickers", Mounted, UK, mag 999, res 0, int 0.12, auto true, dmg 48.0, head 2.0, hip 0.012, ads 0.007, mov 0.0, bloom 0.002, kick 0.005, side 0.006, rel 1.0, rele 1.0, fall 0.9, fov 50.0, lvl 1),
+    gun!("Maxim", Mounted, RU, mag 999, res 0, int 0.1, auto true, dmg 48.0, head 2.0, hip 0.012, ads 0.007, mov 0.0, bloom 0.002, kick 0.005, side 0.006, rel 1.0, rele 1.0, fall 0.9, fov 50.0, lvl 1),
 ];
+
+/// Ametralladora montada de cada nación.
+pub fn mounted_gun(n: u8) -> u8 {
+    nation_gun(if n == nation::ZOMBIE { nation::DE } else { n }, GunKind::Mounted)
+}
+
+/// Distancia a la que se puede coger una ametralladora montada o dar un culatazo.
+pub const MOUNT_RANGE: f32 = 1.4;
+pub const MELEE_RANGE: f32 = 1.8;
+pub const MELEE_DAMAGE: f32 = 135.0;
+/// Giro máximo de una ametralladora montada a cada lado (radianes)
+pub const MOUNT_ARC: f32 = 1.05;
 
 pub const CLAWS: u8 = 23;
 
@@ -285,6 +309,7 @@ pub mod xp {
     pub const WIN: u16 = 100;
     pub const MATCH: u16 = 40;
     pub const WAVE: u16 = 30;
+    pub const MELEE: u16 = 15;
 }
 
 /// Equipamiento elegido por el jugador antes de aparecer.
@@ -294,11 +319,13 @@ pub struct Loadout {
     /// Arma principal concreta (si no casa con la clase y la nación, se elige la primera válida)
     pub primary: u8,
     pub perk: u8,
+    /// Pistola elegida (255 = la de siempre de la nación)
+    pub secondary: u8,
 }
 
 impl Default for Loadout {
     fn default() -> Self {
-        Loadout { class: 0, primary: 255, perk: perk::NONE }
+        Loadout { class: 0, primary: 255, perk: perk::NONE, secondary: 255 }
     }
 }
 
@@ -308,6 +335,10 @@ impl Loadout {
         let c = &CLASSES[(class as usize).min(CLASSES.len() - 1)];
         (0..GUNS.len() as u8).filter(|&g| GUNS[g as usize].nation == nat && c.kinds.contains(&GUNS[g as usize].kind)).collect()
     }
+    /// Pistolas de una nación.
+    pub fn pistols(nat: u8) -> Vec<u8> {
+        (0..GUNS.len() as u8).filter(|&g| GUNS[g as usize].nation == nat && GUNS[g as usize].kind == GunKind::Pistol).collect()
+    }
     /// Armas (principal, pistola) y granadas para una nación.
     pub fn resolve(&self, nat: u8) -> ([u8; 2], u8) {
         if nat == nation::ZOMBIE {
@@ -315,7 +346,8 @@ impl Loadout {
         }
         let opts = Loadout::options(self.class, nat);
         let primary = if opts.contains(&self.primary) { self.primary } else { opts.first().copied().unwrap_or(nation_gun(nat, GunKind::Rifle)) };
-        let pistol = nation_gun(nat, GunKind::Pistol);
+        let pistols = Loadout::pistols(nat);
+        let pistol = if pistols.contains(&self.secondary) { self.secondary } else { nation_gun(nat, GunKind::Pistol) };
         let mut g = CLASSES[(self.class as usize).min(CLASSES.len() - 1)].grenades;
         if self.perk == perk::GRENADIER {
             g += 1;
@@ -336,6 +368,12 @@ pub mod btn {
     pub const RELOAD: u16 = 64; // flanco
     pub const GRENADE: u16 = 128; // flanco
     pub const USE: u16 = 256;
+    /// Culatazo o cuchillada (flanco)
+    pub const MELEE: u16 = 512;
+    /// Granada de humo (flanco)
+    pub const SMOKE: u16 = 1024;
+    /// Coger o soltar una ametralladora montada (flanco)
+    pub const MOUNT: u16 = 2048;
 }
 
 /// Un paso de entrada del jugador (uno por tick de 1/60 s).
@@ -398,6 +436,14 @@ pub struct PState {
     pub switch_t: f32,
     pub throw_t: f32,
     pub grenades: u8,
+    pub smokes: u8,
+    /// Tiempo que falta del culatazo en curso
+    pub melee_t: f32,
+    /// Ametralladora montada que se está usando (255 = ninguna)
+    pub mounted: u8,
+    /// Calor del cañón de la ametralladora montada (1 = recalentada)
+    pub heat: f32,
+    pub overheated: bool,
     pub ads: f32,
     pub bloom: f32,
     pub moving: f32,
@@ -450,6 +496,11 @@ impl PState {
             switch_t: 0.0,
             throw_t: 0.0,
             grenades,
+            smokes: if nat == nation::ZOMBIE { 0 } else { 1 },
+            melee_t: 0.0,
+            mounted: NO_TURRET,
+            heat: 0.0,
+            overheated: false,
             ads: 0.0,
             bloom: 0.0,
             moving: 0.0,
@@ -458,7 +509,13 @@ impl PState {
         }
     }
     pub fn gun_id(&self) -> u8 {
+        if self.mounted != NO_TURRET {
+            return mounted_gun(self.nation);
+        }
         self.guns[(self.slot as usize).min(1)]
+    }
+    pub fn is_mounted(&self) -> bool {
+        self.mounted != NO_TURRET
     }
     pub fn max_stamina(&self) -> f32 {
         if self.perk == perk::LUNGS {
@@ -507,6 +564,9 @@ impl PState {
         if self.throw_t > 0.0 {
             l = l.max((self.throw_t / 0.8 * PI).sin());
         }
+        if self.is_mounted() {
+            l = 0.0;
+        }
         if self.busy {
             l = 1.0;
         }
@@ -514,11 +574,19 @@ impl PState {
     }
 }
 
+pub const NO_TURRET: u8 = 255;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Outcome {
     /// (origen, dirección con dispersión aplicada)
     pub shot: Option<(V3, V3)>,
     pub throw: Option<(V3, V3)>,
+    /// La granada lanzada es de humo
+    pub smoke: bool,
+    /// Culatazo: (ojo, dirección)
+    pub melee: Option<(V3, V3)>,
+    /// Ha cogido (Some(true)) o soltado (Some(false)) una ametralladora
+    pub mount: Option<bool>,
     pub reload: bool,
     pub ping: bool,
     pub dry: bool,
@@ -537,6 +605,67 @@ pub fn step(world: &World, p: &mut PState, cmd: &Cmd, rng: &mut Rng) -> Outcome 
     p.cooldown -= dt;
     p.switch_t = (p.switch_t - dt).max(0.0);
     p.throw_t = (p.throw_t - dt).max(0.0);
+    p.melee_t = (p.melee_t - dt).max(0.0);
+    p.heat = (p.heat - dt * 0.12).max(0.0);
+    if p.overheated && p.heat < 0.35 {
+        p.overheated = false;
+    }
+
+    // Ametralladora montada: coger y soltar
+    if cmd.has(btn::MOUNT) && !p.busy {
+        if p.is_mounted() {
+            let t = world.turrets.get(p.mounted as usize).copied();
+            p.mounted = NO_TURRET;
+            if let Some(t) = t {
+                p.pos = t.stand - V3::from_yaw(t.yaw) * 0.15;
+            }
+            p.switch_t = 0.3;
+            out.mount = Some(false);
+        } else if let Some(k) = world.turrets.iter().position(|t| t.stand.dist_flat(p.pos) < MOUNT_RANGE && (t.stand.y - p.pos.y).abs() < 0.8) {
+            p.mounted = k as u8;
+            p.reload_t = 0.0;
+            p.crouching = false;
+            p.switch_t = 0.35;
+            out.mount = Some(true);
+        }
+    }
+    if let Some(t) = world.turrets.get(p.mounted as usize).copied() {
+        // Quieto detrás del arma, con el giro limitado
+        p.pos = t.stand;
+        p.vel = V3::ZERO;
+        p.grounded = true;
+        p.sprinting = false;
+        p.crouch = approach(p.crouch, 0.0, dt * 7.0);
+        let rel = wrap_angle(p.yaw - t.yaw).clamp(-MOUNT_ARC, MOUNT_ARC);
+        p.yaw = wrap_angle(t.yaw + rel);
+        p.pitch = p.pitch.clamp(-0.5, 0.45);
+        p.ads = approach(p.ads, if cmd.has(btn::ADS) { 1.0 } else { 0.0 }, dt * 6.0);
+        p.moving = 0.0;
+        let def = p.gun();
+        if cmd.has(btn::FIRE) && p.cooldown <= 0.0 && !p.overheated && p.switch_t <= 0.0 {
+            p.cooldown = def.interval;
+            p.heat += def.interval * 0.32 + 0.012;
+            if p.heat >= 1.0 {
+                p.heat = 1.0;
+                p.overheated = true;
+            }
+            let spread = lerp(def.spread_hip, def.spread_ads, p.ads) + p.heat * 0.01;
+            let f = p.forward();
+            let r = p.right();
+            let up = r.cross(f).norm();
+            let a = rng.range(0.0, 2.0 * PI);
+            let rr = spread * rng.f().sqrt();
+            let dir = (f + r * (rr * a.cos()) + up * (rr * a.sin())).norm();
+            out.shot = Some((p.eye(), dir));
+            out.kick = def.kick;
+        }
+        if cmd.has(btn::JUMP) {
+            p.mounted = NO_TURRET;
+            p.pos = t.stand - V3::from_yaw(t.yaw) * 0.15;
+            out.mount = Some(false);
+        }
+        return out;
+    }
 
     let fwd_in = if p.busy { 0.0 } else { cmd.fwd_f() };
     let strafe_in = if p.busy { 0.0 } else { cmd.strafe_f() };
@@ -643,7 +772,7 @@ pub fn step(world: &World, p: &mut PState, cmd: &Cmd, rng: &mut Rng) -> Outcome 
     }
 
     let def = p.gun();
-    let ready = p.reload_t <= 0.0 && p.switch_t <= 0.0 && p.throw_t <= 0.0 && !p.busy;
+    let ready = p.reload_t <= 0.0 && p.switch_t <= 0.0 && p.throw_t <= 0.0 && p.melee_t <= 0.0 && !p.busy;
     let ammo = p.ammo[p.slot as usize];
     if ready
         && ammo.reserve > 0
@@ -680,13 +809,28 @@ pub fn step(world: &World, p: &mut PState, cmd: &Cmd, rng: &mut Rng) -> Outcome 
         }
     }
 
-    if cmd.has(btn::GRENADE) && p.grenades > 0 && ready {
-        p.grenades -= 1;
+    let smoke = cmd.has(btn::SMOKE) && p.smokes > 0;
+    if (cmd.has(btn::GRENADE) && p.grenades > 0 || smoke) && ready {
+        if smoke {
+            p.smokes -= 1;
+        } else {
+            p.grenades -= 1;
+        }
         p.throw_t = 0.8;
         let f = p.forward();
         let origin = p.eye() + f * 0.4 + p.right() * 0.2;
         let vel = f * 15.0 + V3::UP * 2.5 + p.vel.flat() * 0.5;
         out.throw = Some((origin, vel));
+        out.smoke = smoke;
+        return out;
+    }
+
+    // Culatazo o cuchillada
+    if cmd.has(btn::MELEE) && p.melee_t <= 0.0 && p.throw_t <= 0.0 && !p.busy && def.kind != GunKind::Melee {
+        p.melee_t = 0.75;
+        p.reload_t = 0.0;
+        p.cooldown = p.cooldown.max(0.55);
+        out.melee = Some((p.eye(), V3::from_yaw_pitch(p.yaw, p.pitch)));
     }
     out
 }
@@ -709,6 +853,9 @@ pub struct Grenade {
     pub owner: u8,
     pub side: u8,
     pub bounce_cd: f32,
+    /// Nación de quien la lanzó (decide el modelo) y si es de humo
+    pub nation: u8,
+    pub smoke: bool,
 }
 
 /// Física de una granada. Devuelve true si ha rebotado con fuerza.

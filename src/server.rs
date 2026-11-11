@@ -66,6 +66,9 @@ pub const SITE_RADIUS: f32 = 2.2;
 pub const FLAG_RADIUS: f32 = 1.6;
 pub const FLAG_RETURN: f32 = 30.0;
 pub const HQ_RADIUS: f32 = 4.0;
+/// Lo que dura una nube de humo (segundos) y su radio
+pub const SMOKE_TIME: f32 = 24.0;
+pub const SMOKE_RADIUS: f32 = 5.5;
 pub const HQ_CAPTURE: f32 = 8.0;
 pub const HQ_DESTROY: f32 = 8.0;
 pub const HQ_HOLD: f32 = 90.0;
@@ -171,6 +174,8 @@ pub struct Server {
     /// Disparos recientes (para que los bots «oigan»): (tirador, origen, tick)
     recent_shots: Vec<(u8, V3, u32)>,
     bot_check: f32,
+    /// Nubes de humo: (posición, edad en segundos)
+    pub smokes: Vec<(V3, f32)>,
 }
 
 impl Server {
@@ -219,6 +224,7 @@ impl Server {
             wave_break: 0.0,
             recent_shots: Vec::new(),
             bot_check: 0.0,
+            smokes: Vec::new(),
             cfg,
         };
         s.hq_spots = hq_spots(&s.world);
@@ -525,14 +531,14 @@ impl Server {
     }
 
     fn on_cmds(&mut self, id: usize, r: &mut R) {
-        let (Some(snap_tick), Some(ev_ack), Some(team_req), Some(class), Some(primary), Some(perk_id), Some(level), Some(chat_id)) =
-            (r.u32(), r.u32(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u16())
+        let (Some(snap_tick), Some(ev_ack), Some(team_req), Some(class), Some(primary), Some(perk_id), Some(secondary), Some(level), Some(chat_id)) =
+            (r.u32(), r.u32(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u8(), r.u16())
         else {
             return;
         };
         {
             let s = self.slots[id].as_mut().unwrap();
-            s.loadout = Loadout { class: class.min(CLASSES.len() as u8 - 1), primary, perk: perk_id.min(perk::COUNT - 1) };
+            s.loadout = Loadout { class: class.min(CLASSES.len() as u8 - 1), primary, perk: perk_id.min(perk::COUNT - 1), secondary };
             s.level = level.clamp(1, 20);
         }
         let chat = if chat_id != 0 {
@@ -635,6 +641,20 @@ impl Server {
             s.use_held = true;
             return;
         }
+        // Una ametralladora montada solo la puede usar uno
+        let mut cmd = *cmd;
+        if cmd.has(btn::MOUNT) {
+            let me = &self.slots[id].as_ref().unwrap().ps;
+            if !me.is_mounted() {
+                let pos = me.pos;
+                let taken = |k: usize| self.slots.iter().enumerate().any(|(i, o)| i != id && o.as_ref().map(|o| o.alive && o.ps.mounted as usize == k).unwrap_or(false));
+                let free = self.world.turrets.iter().enumerate().any(|(k, t)| t.stand.dist_flat(pos) < MOUNT_RANGE && !taken(k));
+                if !free || self.slots[id].as_ref().unwrap().zombie {
+                    cmd.buttons &= !btn::MOUNT;
+                }
+            }
+        }
+        let cmd = &cmd;
         let out = {
             let s = self.slots[id].as_mut().unwrap();
             s.use_held = cmd.has(btn::USE);
@@ -646,7 +666,7 @@ impl Server {
             step(&self.world, &mut s.ps, cmd, &mut self.rng)
         };
         let s = self.slots[id].as_ref().unwrap();
-        let (pos, side, gun_id) = (s.ps.pos, s.ps.side, s.ps.gun_id());
+        let (pos, side, gun_id, nat) = (s.ps.pos, s.ps.side, s.ps.gun_id(), s.ps.nation);
         if let Some((eye, dir)) = out.shot {
             self.recent_shots.push((id as u8, eye, self.tick));
             self.fire(id, eye, dir, cmd.view_tick, gun_id);
@@ -654,14 +674,52 @@ impl Server {
         if let Some((p, v)) = out.throw {
             let gid = self.next_grenade;
             self.next_grenade = self.next_grenade.wrapping_add(1).max(1);
-            self.grenades.push(Grenade { id: gid, pos: p, vel: v, fuse: 3.0, owner: id as u8, side, bounce_cd: 0.0 });
+            let fuse = if out.smoke { 1.6 } else { 3.0 };
+            self.grenades.push(Grenade { id: gid, pos: p, vel: v, fuse, owner: id as u8, side, bounce_cd: 0.0, nation: nat, smoke: out.smoke });
             self.push(Ev::Throw { who: id as u8, pos: p });
+        }
+        if let Some((eye, dir)) = out.melee {
+            self.melee(id, eye, dir);
         }
         if out.reload {
             self.push(Ev::Reload { who: id as u8, pos });
         }
         if out.ping {
             self.push(Ev::Ping { who: id as u8, pos });
+        }
+    }
+
+    /// Culatazo: da al enemigo más cercano que esté delante y a mano.
+    fn melee(&mut self, id: usize, eye: V3, dir: V3) {
+        let my_team = self.slots[id].as_ref().unwrap().team;
+        let teams = self.mode.teams();
+        let flat = dir.flat().norm();
+        let mut best: Option<(usize, f32)> = None;
+        for (i, s) in self.slots.iter().enumerate() {
+            let Some(s) = s else { continue };
+            if i == id || !s.alive || (teams && s.team == my_team) {
+                continue;
+            }
+            let to = s.ps.pos + V3::UP * 1.0 - (eye - V3::UP * 0.6);
+            let d = to.flat().len();
+            if d > MELEE_RANGE || to.y.abs() > 1.4 {
+                continue;
+            }
+            if to.flat().norm().dot(flat) < 0.55 && d > 0.6 {
+                continue;
+            }
+            if !self.world.los(eye, s.ps.pos + V3::UP * 1.1) {
+                continue;
+            }
+            if best.map(|b| d < b.1).unwrap_or(true) {
+                best = Some((i, d));
+            }
+        }
+        let pos = eye + dir * 0.8;
+        self.push(Ev::Melee { who: id as u8, pos, hit: best.is_some() });
+        if let Some((victim, _)) = best {
+            self.push(Ev::Hit { shooter: id as u8 });
+            self.damage(victim, MELEE_DAMAGE, Some(id), weapon::BASH, false, eye);
         }
     }
 
@@ -673,7 +731,7 @@ impl Server {
         }
         let (pos, eye, f, side, vel) = (s.ps.pos, s.ps.eye(), s.ps.forward(), s.ps.side, s.ps.vel);
         let right = s.ps.right();
-        let Some(g) = self.grenades.iter_mut().filter(|g| g.fuse > 0.25 && g.pos.dist_flat(pos) < 1.7 && (g.pos.y - pos.y).abs() < 1.6).min_by(|a, b| {
+        let Some(g) = self.grenades.iter_mut().filter(|g| !g.smoke && g.fuse > 0.25 && g.pos.dist_flat(pos) < 1.7 && (g.pos.y - pos.y).abs() < 1.6).min_by(|a, b| {
             a.pos.dist(pos).partial_cmp(&b.pos.dist(pos)).unwrap_or(std::cmp::Ordering::Equal)
         }) else {
             return false;
@@ -952,6 +1010,7 @@ impl Server {
         self.wave = 0;
         self.zombies_to_spawn = 0;
         self.wave_break = 0.0;
+        self.smokes.clear();
         self.team_scores = [0, 0];
         self.round = 0;
         self.grenades.clear();
@@ -1368,10 +1427,20 @@ impl Server {
                 bounces.push(g.pos);
             }
             if g.fuse <= 0.0 {
-                booms.push((g.pos, g.owner, g.side));
+                if g.smoke {
+                    self.smokes.push((g.pos, 0.0));
+                    self.events.push_back((self.next_event, Ev::Smoke { pos: g.pos }));
+                    self.next_event += 1;
+                } else {
+                    booms.push((g.pos, g.owner, g.side));
+                }
             }
         }
         self.grenades.retain(|g| g.fuse > 0.0);
+        for s in self.smokes.iter_mut() {
+            s.1 += dt;
+        }
+        self.smokes.retain(|s| s.1 < SMOKE_TIME);
         for p in bounces {
             self.push(Ev::Bounce { pos: p });
         }
@@ -1500,6 +1569,8 @@ impl Server {
                     nation: s.ps.nation,
                     level: if s.is_bot() { 0 } else { s.level },
                     bot: s.is_bot(),
+                    mounted: if s.alive { s.ps.mounted } else { NO_TURRET },
+                    melee: s.ps.melee_t > 0.45,
                     pos: s.ps.pos,
                     yaw: s.ps.yaw,
                     pitch: s.ps.pitch,
@@ -1515,7 +1586,7 @@ impl Server {
 
     fn send_snapshots(&mut self) {
         let players = self.player_infos();
-        let grenades: Vec<GrenadeInfo> = self.grenades.iter().map(|g| GrenadeInfo { id: g.id, pos: g.pos, side: g.side }).collect();
+        let grenades: Vec<GrenadeInfo> = self.grenades.iter().map(|g| GrenadeInfo { id: g.id, pos: g.pos, side: g.side, nation: g.nation, smoke: g.smoke }).collect();
         for s in self.slots.iter().flatten().filter(|s| !s.is_bot()) {
             let events: Vec<(u32, Ev)> = self.events.iter().filter(|(id, _)| *id > s.event_ack).cloned().collect();
             let snap = Snapshot {
@@ -1547,6 +1618,7 @@ impl Server {
                 me: if s.alive { Some(s.ps.clone()) } else { None },
                 players: players.clone(),
                 grenades: grenades.clone(),
+                smokes: self.smokes.clone(),
                 events,
             };
             let mut w = W::new(s2c::SNAPSHOT);
@@ -1643,7 +1715,7 @@ impl Server {
             history: VecDeque::new(),
             use_held: false,
             progress: 0.0,
-            loadout: Loadout { class, primary, perk: perk_id },
+            loadout: Loadout { class, primary, perk: perk_id, secondary: 255 },
             level: 1,
             bot: Some(Box::new(brain)),
             zombie,
@@ -1739,6 +1811,7 @@ impl Server {
             hq_state: self.hq_state,
             hq_pos: self.hq_pos,
             hq_owner: self.hq_owner,
+            smokes: self.smokes.iter().map(|s| s.0).collect(),
         }
     }
 

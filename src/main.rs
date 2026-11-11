@@ -14,7 +14,7 @@ use deia::net::*;
 use deia::server::{spawn_listen_server, ServerConfig, SITE_RADIUS};
 use deia::sfx;
 use deia::shader;
-use deia::sim::{gun, level_of, nation, nation_name, perk, perk_info, team_name, xp_for_level, GunKind, Loadout, CLASSES, GUNS, MAX_HEALTH, RANKS, STAND_EYE};
+use deia::sim::{gun, level_of, mounted_gun, MOUNT_RANGE, NO_TURRET, nation, nation_name, perk, perk_info, team_name, xp_for_level, GunKind, Loadout, CLASSES, GUNS, MAX_HEALTH, RANKS, STAND_EYE};
 use deia::world::{Aabb, World};
 use macroquad::audio::{load_sound_from_bytes, play_sound, set_sound_volume, stop_sound, PlaySoundParams, Sound};
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
@@ -83,7 +83,7 @@ fn gun_sound(g: u8) -> usize {
         GunKind::Smg if d.nation == nation::DE || d.name == "Sten" => 3,
         GunKind::Smg => 1,
         GunKind::Pistol | GunKind::Melee => 4,
-        GunKind::Support => 5,
+        GunKind::Support | GunKind::Mounted => 5,
         GunKind::Sniper => 6,
     }
 }
@@ -105,6 +105,9 @@ struct Sounds {
     impact: Spatial,
     whiz: Option<Sound>,
     pin: Option<Sound>,
+    swing: Option<Sound>,
+    bash: Spatial,
+    hiss: Spatial,
     /// Bucles de fondo: ambiente de batalla (en partida) y música (en los menús)
     ambience: Option<Sound>,
     music: Option<Sound>,
@@ -163,6 +166,9 @@ impl Sounds {
             impact: spatial(sfx::impact()).await,
             whiz: snd(sfx::whiz()).await,
             pin: snd(sfx::pin()).await,
+            swing: snd(sfx::swing()).await,
+            bash: spatial(sfx::bash()).await,
+            hiss: spatial(sfx::smoke_hiss()).await,
             ambience: snd(sfx::ambience()).await,
             music: snd(sfx::menu_music()).await,
             bg: 0,
@@ -1285,7 +1291,10 @@ impl App {
         i.ads = is_mouse_button_down(MouseButton::Right);
         i.reload = is_key_pressed(KeyCode::R);
         i.grenade = is_key_pressed(KeyCode::G);
+        i.smoke = is_key_pressed(KeyCode::H) || is_key_pressed(KeyCode::Key4);
+        i.melee = is_key_pressed(KeyCode::V) || is_mouse_button_pressed(MouseButton::Middle);
         i.use_key = is_key_down(KeyCode::F);
+        i.mount = is_key_pressed(KeyCode::F);
         if is_key_pressed(KeyCode::Key1) {
             i.slot = Some(0);
         }
@@ -1362,7 +1371,7 @@ impl App {
         inp.look_pitch += want.1 - self.sway.1;
         self.sway = want;
         if let Some(c) = self.client.as_mut() {
-            c.loadout = Loadout { class: self.settings.class, primary: self.settings.primary, perk: self.settings.perk };
+            c.loadout = Loadout { class: self.settings.class, primary: self.settings.primary, perk: self.settings.perk, secondary: self.settings.secondary };
             c.level = level_of(self.settings.xp);
         }
         let mut client = self.client.take().unwrap();
@@ -1447,6 +1456,8 @@ impl App {
                     self.sounds.play(&self.sounds.throw, 0.6);
                 }
                 LocalFx::Switch => self.sounds.play(&self.sounds.switch, 0.5),
+                LocalFx::Melee => self.sounds.play(&self.sounds.swing, 0.6),
+                LocalFx::Mount => self.sounds.play(&self.sounds.reload, 0.5),
             }
         }
 
@@ -1575,6 +1586,16 @@ impl App {
                     self.settings.save();
                 }
                 Ev::Xp { .. } => {}
+                Ev::Melee { who, pos, hit } => {
+                    if *hit {
+                        self.sounds.play_at(&self.sounds.bash, 0.8 * near(*pos, 25.0), *pos, ear, yaw);
+                    } else if *who != me {
+                        self.sounds.play(&self.sounds.swing, 0.4 * near(*pos, 12.0));
+                    }
+                }
+                Ev::Smoke { pos } => {
+                    self.sounds.play_at(&self.sounds.hiss, 0.6 * near(*pos, 40.0), *pos, ear, yaw);
+                }
                 Ev::Growl { pos, attack, .. } => {
                     if *attack && pos.dist(ear) < 3.0 {
                         self.sounds.play(&self.sounds.claw, 0.8);
@@ -1864,9 +1885,40 @@ impl App {
                 pg.blob_shadow(pos, 0.55, 0.35);
             }
         }
+        // Ametralladoras montadas (la propia se ve en primera persona)
+        if let Some(s) = snap {
+            let my_turret = c.pred.as_ref().map(|p| p.mounted).unwrap_or(NO_TURRET);
+            for (k, t) in self.world.turrets.iter().enumerate() {
+                if k as u8 == my_turret {
+                    continue;
+                }
+                let user = c.remotes().into_iter().find(|p| p.alive && p.mounted as usize == k);
+                let (yaw, pitch) = user.map(|p| (p.yaw, p.pitch)).unwrap_or((t.yaw, -0.05));
+                let nat = if t.side == 1 { nation::DE } else { s.allied_nation };
+                dg.sun = sun_vis(&self.world, t.pos + V3::UP * 0.3);
+                geo::turret(&mut dg, t.pos, yaw, pitch, mounted_gun(nat));
+            }
+            // Humo: bolas grises que crecen y se deshacen
+            for (k, (sp, age)) in s.smokes.iter().enumerate() {
+                let fade = (age / 1.5).min(1.0) * ((deia::server::SMOKE_TIME - age) / 5.0).clamp(0.0, 1.0);
+                let grow = (age / 4.0).min(1.0);
+                let mut r = Rng::new(k as u64 * 31 + 7 + (sp.x * 10.0) as u64);
+                for _ in 0..22 {
+                    let a = r.range(0.0, std::f32::consts::TAU);
+                    let d = r.range(0.0, deia::server::SMOKE_RADIUS * 0.75) * grow;
+                    let h = r.range(0.3, 3.2) * (0.4 + 0.6 * grow);
+                    let drift = V3::from_yaw(0.6) * (age * 0.08);
+                    let p = *sp + v3(a.cos() * d, h, a.sin() * d) + drift;
+                    let size = r.range(1.6, 2.6) * (0.5 + 0.5 * grow);
+                    let shade = r.range(0.72, 0.86);
+                    pg.set(geo::m::SOFT);
+                    pg.billboard(p, right, up, size, [shade, shade, shade * 0.98, 0.55 * fade], 0.0);
+                }
+            }
+        }
         dg.sun = 1.0;
         for g in c.grenades() {
-            geo::grenade(&mut dg, g.pos, self.clock * 8.0 + g.id as f32, g.side == 0);
+            geo::grenade_of(&mut dg, g.pos, self.clock * 8.0 + g.id as f32, g.nation, g.smoke);
         }
         self.r.opaque(&dg);
 
@@ -1880,6 +1932,7 @@ impl App {
             let vp = ViewParams {
                 gun: p.gun_id(),
                 nation: p.nation,
+                melee: if p.melee_t > 0.0 { 1.0 - p.melee_t / 0.75 } else { 0.0 },
                 ads: p.ads,
                 bob: p.bob,
                 moving: p.moving,
@@ -1893,7 +1946,7 @@ impl App {
             let scoped_in = p.gun().scoped() && p.ads > 0.85;
             if scoped_in {
                 // Con la mira telescópica puesta no se ve el arma
-            } else if gi < 4 && self.r.art.has_view(gi) {
+            } else if gi < 4 && self.r.art.has_view(gi) && p.melee_t <= 0.0 {
                 let pose = arte::ViewPose {
                     eye: cam.eye,
                     fwd: cam.fwd,
@@ -1984,6 +2037,16 @@ impl App {
             }
         } else {
             self.r.hurt = 0.0;
+        }
+
+        // Dentro de una nube de humo no se ve casi nada
+        let inside = s.smokes.iter().map(|(p, age)| {
+            let d = (*p + V3::UP * 1.5).dist(cam.eye);
+            let k = (1.0 - d / deia::server::SMOKE_RADIUS).clamp(0.0, 1.0) * (age / 2.0).min(1.0) * ((deia::server::SMOKE_TIME - age) / 5.0).clamp(0.0, 1.0);
+            k
+        }).fold(0.0f32, f32::max);
+        if inside > 0.0 {
+            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.78, 0.78, 0.76, (inside * 1.4).min(0.92)));
         }
 
         // Nombres sobre las cabezas
@@ -2089,7 +2152,32 @@ impl App {
             // Munición (abajo a la derecha): cargador | reserva | granadas
             let def = p.gun();
             let a = p.ammo[p.slot as usize];
-            hud_ammo(sw, sh, a.mag, a.reserve, def.mag, p.grenades, matches!(def.kind, GunKind::Smg | GunKind::Pistol), def.name);
+            if p.is_mounted() {
+                // Calor del cañón en lugar de munición
+                let w = 200.0;
+                let (x, y) = (sw - 24.0 - w, sh - 34.0);
+                txt_r(def.name, sw - 24.0, y - 18.0, 18.0, CREAM);
+                draw_rectangle(x, y, w, 10.0, Color::new(0.0, 0.0, 0.0, 0.5));
+                let col = if p.overheated { Color::new(1.0, 0.3, 0.2, 1.0) } else { Color::new(1.0, lerp(0.85, 0.35, p.heat), 0.3, 1.0) };
+                draw_rectangle(x, y, w * p.heat, 10.0, col);
+                if p.overheated {
+                    txt_c("¡Cañón recalentado!", cx, cy + 70.0, 22.0, col);
+                }
+                txt_c("F o salto: soltar la ametralladora", cx, sh - 40.0, 16.0, DIM);
+            } else {
+                hud_ammo(sw, sh, a.mag, a.reserve, def.mag, p.grenades, matches!(def.kind, GunKind::Smg | GunKind::Pistol), def.name);
+                if p.smokes > 0 {
+                    txt_r(&format!("Humo ×{} (H)", p.smokes), sw - 24.0, sh - 112.0, 15.0, DIM);
+                }
+                // Nido de ametralladora libre cerca
+                let near_turret = self.world.turrets.iter().enumerate().find(|(k, t)| {
+                    t.stand.dist_flat(p.pos) < MOUNT_RANGE && !c.remotes().iter().any(|o| o.alive && o.mounted as usize == *k)
+                });
+                if let Some((_, t)) = near_turret {
+                    let nat = if t.side == 1 { nation::DE } else { s.allied_nation };
+                    txt_c(&format!("Pulsa F para usar la {}", gun(mounted_gun(nat)).name), cx, cy + 150.0, 22.0, GOLD);
+                }
+            }
             if a.mag == 0 && a.reserve == 0 {
                 txt_c("Sin munición: cambia de arma (Q)", cx, cy + 90.0, 20.0, Color::new(1.0, 0.6, 0.4, 1.0));
             }
@@ -2176,6 +2264,7 @@ impl App {
                 weapon::GRENADE => "granada",
                 weapon::BOMB => "bomba",
                 weapon::MELEE => "zarpazo",
+                weapon::BASH => "culatazo",
                 _ => "",
             };
             let mid = if f.weapon == weapon::SUICIDE {
@@ -2235,7 +2324,7 @@ impl App {
         let ping = c.me_info().map(|p| p.ping).unwrap_or(0);
         txt_r(&format!("{} fps · {} ms", get_fps(), ping), sw - 10.0, 22.0, 16.0, Color::new(1.0, 1.0, 1.0, 0.45));
         if !typing && !self.pause && !self.team_menu && s.phase != Phase::Intermission {
-            let help = if teams { "Tab: marcador · T/Y: chat · M: equipo · L: equipamiento · F: devolver granada · Esc: menú" } else { "Tab: marcador · T: chat · L: equipamiento · Esc: menú" };
+            let help = if teams { "Tab: marcador · T/Y: chat · M: equipo · L: equipamiento · V: culatazo · H: humo · F: usar · Esc: menú" } else { "Tab: marcador · T: chat · L: equipamiento · Esc: menú" };
             txt_c(help, cx, sh - 14.0, 14.0, Color::new(1.0, 1.0, 1.0, 0.35));
         }
     }
@@ -2569,8 +2658,13 @@ impl App {
         if !opts.contains(&self.settings.primary) || gun(self.settings.primary).unlock > level {
             self.settings.primary = chosen;
         }
-        let pistol = deia::sim::nation_gun(my_nation, GunKind::Pistol);
-        txt(&format!("Arma secundaria: {}", gun(pistol).name), cx1, top + 14.0 + 4.0 * 62.0 + 20.0, 16.0, DIM);
+        let pistols = Loadout::pistols(my_nation);
+        let cur = pistols.iter().position(|&g| g == self.settings.secondary).unwrap_or(0);
+        let py = top + 14.0 + opts.len().max(3) as f32 * 62.0 + 6.0;
+        txt(&format!("Pistola: {}", gun(pistols[cur]).name), cx1, py + 20.0, 18.0, CREAM);
+        if pistols.len() > 1 && small_button(Rect::new(cx1 + col_w - 110.0, py, 110.0, 30.0), "Cambiar") {
+            self.settings.secondary = pistols[(cur + 1) % pistols.len()];
+        }
         // Ventajas
         for k in 0..perk::COUNT {
             let (name, desc, lvl) = perk_info(k);
@@ -2947,6 +3041,7 @@ impl App {
             8 => look(v3(-21.0, 1.25, 8.6), v3(-21.0, 0.95, 4.5), 60.0),
             9 => look(v3(10.5, 2.0, 4.6), v3(5.0, 1.2, -2.5), 60.0),
             10 => look(v3(22.0, 3.5, 17.0), v3(27.0, 3.8, 22.5), 60.0),
+            12 => look(v3(-3.6, 1.9, -45.0), v3(-6.0, 1.0, -41.6), 55.0),
             _ => None,
         }
     }
@@ -3003,6 +3098,13 @@ impl App {
                     shot("equipamiento", &demo.dir);
                     self.loadout_menu = false;
                     demo.step = 12;
+                    demo.t = 0.0;
+                }
+            }
+            12 => {
+                if demo.t > 1.5 {
+                    shot("ametralladora", &demo.dir);
+                    demo.step = 13;
                     demo.t = 0.0;
                 }
             }
