@@ -1,0 +1,81 @@
+# Genera los instaladores de Windows y Ubuntu.
+# Se lanza al publicar una etiqueta de versión o a mano desde la pestaña «Actions»
+# (Instaladores › Run workflow). Las descargas se publican en la release
+# de la versión indicada en Cargo.toml.
+name: Instaladores
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    # Ubuntu 22.04: el paquete funciona también en 24.04 y posteriores
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependencias del sistema
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
+      - name: Pruebas de red
+        run: cargo test --release
+      - name: Compilar
+        run: cargo build --release
+      - name: Paquete .deb
+        run: bash packaging/linux/make-packages.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.deb
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compilar
+        run: cargo build --release
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVersion=$version" packaging\windows\eginbeharraren-deia.iss
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item target\release\eginbeharraren-deia.exe, target\release\eginbeharraren-deia-server.exe, packaging\windows\servidor-dedicado.bat portable\
+          Compress-Archive -Path portable\* -DestinationPath "dist\EginbeharrarenDeia-$version-Windows-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+
+  publicar:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versión
+        id: v
+        run: echo "tag=v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefactos
+      # Publica en la release de la versión de Cargo.toml (la crea si no existe)
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: Eginbeharraren deia ${{ steps.v.outputs.tag }}
+          files: artefactos/**/*
+          body: |
+            **Descarga el instalador de tu sistema:**
+            - **Windows:** `EginbeharrarenDeia-…-Windows-Instalador.exe` (o el `.zip` portable, sin instalar)
+            - **Ubuntu:** `eginbeharraren-deia_…_amd64.deb` (doble clic para instalar)
