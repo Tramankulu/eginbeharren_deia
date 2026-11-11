@@ -9,12 +9,26 @@ pub struct Settings {
     pub invert: bool,
     pub volume: f32,
     pub fov: f32,
+    /// Filtro de pintura sobre la imagen (se puede quitar en equipos lentos).
+    pub paint: bool,
     pub last_address: String,
     pub host_name: String,
     pub host_port: u16,
     pub host_max: u8,
     /// Modos de la rotación al crear partida (identificadores cortos).
     pub host_modes: Vec<String>,
+    /// Bots al crear partida (se rellena hasta este número de jugadores)
+    pub host_bots: u8,
+    /// Nivel de los bots: 0 novato, 1 regular, 2 veterano, 3 élite
+    pub host_bot_skill: u8,
+    /// Nación de los Aliados al crear partida (ver `sim::nation`)
+    pub host_nation: u8,
+    /// Experiencia acumulada (rango)
+    pub xp: u32,
+    /// Equipamiento: clase, arma principal y ventaja
+    pub class: u8,
+    pub primary: u8,
+    pub perk: u8,
 }
 
 impl Default for Settings {
@@ -25,11 +39,19 @@ impl Default for Settings {
             invert: false,
             volume: 0.8,
             fov: 70.0,
+            paint: true,
             last_address: String::new(),
             host_name: "Partida de Eginbeharraren deia".into(),
             host_port: crate::net::DEFAULT_PORT,
             host_max: 12,
             host_modes: vec!["tdm".into()],
+            host_bots: 8,
+            host_bot_skill: 1,
+            host_nation: 0,
+            xp: 0,
+            class: 0,
+            primary: 255,
+            perk: 0,
         }
     }
 }
@@ -62,6 +84,7 @@ impl Settings {
                 "invertir" => s.invert = v == "si",
                 "volumen" => s.volume = v.parse().unwrap_or(s.volume),
                 "campo_vision" => s.fov = v.parse().unwrap_or(s.fov),
+                "pintura" => s.paint = v != "no",
                 "ultima_direccion" => s.last_address = v.to_string(),
                 "servidor_nombre" => s.host_name = crate::net::clean_name(v, 32),
                 "servidor_puerto" => s.host_port = v.parse().unwrap_or(s.host_port),
@@ -76,9 +99,20 @@ impl Settings {
                         s.host_modes = m;
                     }
                 }
+                "servidor_bots" => s.host_bots = v.parse().unwrap_or(s.host_bots),
+                "servidor_nivel_bots" => s.host_bot_skill = v.parse().unwrap_or(s.host_bot_skill),
+                "servidor_aliados" => s.host_nation = crate::sim::parse_nation(v).unwrap_or(0),
+                "experiencia" => s.xp = v.parse().unwrap_or(0),
+                "clase" => s.class = v.parse().unwrap_or(0),
+                "arma" => s.primary = v.parse().unwrap_or(255),
+                "ventaja" => s.perk = v.parse().unwrap_or(0),
                 _ => {}
             }
         }
+        s.host_bots = s.host_bots.min(crate::net::MAX_PLAYERS as u8 - 1);
+        s.host_bot_skill = s.host_bot_skill.min(3);
+        s.class = s.class.min(crate::sim::CLASSES.len() as u8 - 1);
+        s.perk = s.perk.min(crate::sim::perk::COUNT - 1);
         s.sensitivity = s.sensitivity.clamp(0.2, 10.0);
         s.volume = s.volume.clamp(0.0, 1.0);
         s.fov = s.fov.clamp(60.0, 90.0);
@@ -87,13 +121,29 @@ impl Settings {
     }
 
     pub fn to_text(&self) -> String {
+        let mut t = self.base_text();
+        t.push_str(&format!(
+            "servidor_bots={}\nservidor_nivel_bots={}\nservidor_aliados={}\nexperiencia={}\nclase={}\narma={}\nventaja={}\n",
+            self.host_bots,
+            self.host_bot_skill,
+            crate::sim::nation_short(self.host_nation),
+            self.xp,
+            self.class,
+            self.primary,
+            self.perk
+        ));
+        t
+    }
+
+    fn base_text(&self) -> String {
         format!(
-            "nombre={}\nsensibilidad={:.2}\ninvertir={}\nvolumen={:.2}\ncampo_vision={:.0}\nultima_direccion={}\nservidor_nombre={}\nservidor_puerto={}\nservidor_max={}\nservidor_modos={}\n",
+            "nombre={}\nsensibilidad={:.2}\ninvertir={}\nvolumen={:.2}\ncampo_vision={:.0}\npintura={}\nultima_direccion={}\nservidor_nombre={}\nservidor_puerto={}\nservidor_max={}\nservidor_modos={}\n",
             self.name,
             self.sensitivity,
             if self.invert { "si" } else { "no" },
             self.volume,
             self.fov,
+            if self.paint { "si" } else { "no" },
             self.last_address,
             self.host_name,
             self.host_port,

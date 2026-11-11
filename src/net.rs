@@ -3,13 +3,13 @@
 use crate::math::*;
 use crate::sim::{Ammo, Cmd, PState};
 
-pub const PROTOCOL: u16 = 1;
+pub const PROTOCOL: u16 = 2;
 pub const DEFAULT_PORT: u16 = 28960;
 pub const MAGIC: [u8; 2] = *b"ED";
 /// Una instantánea cada 3 ticks = 20 por segundo.
 pub const SNAP_EVERY: u32 = 3;
 pub const MAX_PACKET: usize = 1400;
-pub const MAX_PLAYERS: usize = 16;
+pub const MAX_PLAYERS: usize = 20;
 pub const TIMEOUT_SECS: f32 = 10.0;
 
 // ----------------------------------------------------------------------
@@ -174,16 +174,22 @@ pub enum Mode {
     Tdm,
     Sd,
     Ctf,
+    /// Cuartel General
+    Hq,
+    /// Supervivencia cooperativa contra oleadas de zombis
+    Zombies,
 }
 
 impl Mode {
-    pub const ALL: [Mode; 4] = [Mode::Dm, Mode::Tdm, Mode::Sd, Mode::Ctf];
+    pub const ALL: [Mode; 6] = [Mode::Dm, Mode::Tdm, Mode::Sd, Mode::Ctf, Mode::Hq, Mode::Zombies];
     pub fn id(self) -> u8 {
         match self {
             Mode::Dm => 0,
             Mode::Tdm => 1,
             Mode::Sd => 2,
             Mode::Ctf => 3,
+            Mode::Hq => 4,
+            Mode::Zombies => 5,
         }
     }
     pub fn from_id(v: u8) -> Mode {
@@ -191,6 +197,8 @@ impl Mode {
             1 => Mode::Tdm,
             2 => Mode::Sd,
             3 => Mode::Ctf,
+            4 => Mode::Hq,
+            5 => Mode::Zombies,
             _ => Mode::Dm,
         }
     }
@@ -200,6 +208,8 @@ impl Mode {
             Mode::Tdm => "Por equipos",
             Mode::Sd => "Buscar y destruir",
             Mode::Ctf => "Captura la bandera",
+            Mode::Hq => "Cuartel General",
+            Mode::Zombies => "Zombis",
         }
     }
     pub fn short(self) -> &'static str {
@@ -208,6 +218,8 @@ impl Mode {
             Mode::Tdm => "tdm",
             Mode::Sd => "sd",
             Mode::Ctf => "ctf",
+            Mode::Hq => "hq",
+            Mode::Zombies => "zombis",
         }
     }
     pub fn parse(s: &str) -> Option<Mode> {
@@ -249,10 +261,32 @@ impl Phase {
 }
 
 pub mod weapon {
-    // 0..=3: índice de GUNS
-    pub const GRENADE: u8 = 4;
-    pub const BOMB: u8 = 5;
-    pub const SUICIDE: u8 = 6;
+    // 0..GUNS.len(): índice de GUNS
+    pub const GRENADE: u8 = 200;
+    pub const BOMB: u8 = 201;
+    pub const SUICIDE: u8 = 202;
+    /// Mordisco o zarpazo de zombi
+    pub const MELEE: u8 = 203;
+}
+
+/// Motivo de una recompensa de experiencia.
+pub mod xp_reason {
+    pub const KILL: u8 = 0;
+    pub const HEADSHOT: u8 = 1;
+    pub const OBJECTIVE: u8 = 2;
+    pub const WIN: u8 = 3;
+    pub const MATCH: u8 = 4;
+    pub const WAVE: u8 = 5;
+}
+
+/// Estado del Cuartel General.
+pub mod hq_state {
+    /// Sin cuartel (entre uno y el siguiente)
+    pub const NONE: u8 = 0;
+    /// Esperando a que alguien lo tome
+    pub const NEUTRAL: u8 = 1;
+    /// En manos de un equipo
+    pub const HELD: u8 = 2;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -269,6 +303,10 @@ pub enum Ev {
     Chat { from: u8, team_only: bool, name: String, text: String },
     Announce { text: String, tone: u8 },
     Whistle,
+    /// Experiencia ganada por un jugador
+    Xp { who: u8, amount: u16, reason: u8 },
+    /// Un zombi gruñe o ataca
+    Growl { who: u8, pos: V3, attack: bool },
 }
 
 pub mod tone {
@@ -343,6 +381,18 @@ impl Ev {
                 w.u8(*tone);
             }
             Ev::Whistle => w.u8(11),
+            Ev::Xp { who, amount, reason } => {
+                w.u8(12);
+                w.u8(*who);
+                w.u16(*amount);
+                w.u8(*reason);
+            }
+            Ev::Growl { who, pos, attack } => {
+                w.u8(13);
+                w.u8(*who);
+                w.v3(*pos);
+                w.bool(*attack);
+            }
         }
     }
     pub fn read(r: &mut R) -> Option<Ev> {
@@ -366,6 +416,8 @@ impl Ev {
             9 => Ev::Chat { from: r.u8()?, team_only: r.bool()?, name: r.str()?, text: r.str()? },
             10 => Ev::Announce { text: r.str()?, tone: r.u8()? },
             11 => Ev::Whistle,
+            12 => Ev::Xp { who: r.u8()?, amount: r.u16()?, reason: r.u8()? },
+            13 => Ev::Growl { who: r.u8()?, pos: r.v3()?, attack: r.bool()? },
             _ => return None,
         })
     }
@@ -410,6 +462,10 @@ pub fn write_pstate(w: &mut W, p: &PState) {
         w.u16(a.mag as u16);
         w.u16(a.reserve as u16);
     }
+    w.u8(p.guns[0]);
+    w.u8(p.guns[1]);
+    w.u8(p.nation);
+    w.u8(p.perk);
     w.u8(p.slot);
     w.f32(p.cooldown);
     w.f32(p.reload_t);
@@ -437,7 +493,13 @@ pub fn read_pstate(r: &mut R) -> Option<PState> {
         a.mag = r.u16()? as u32;
         a.reserve = r.u16()? as u32;
     }
+    let guns = [r.u8()?, r.u8()?];
+    let nation = r.u8()?;
+    let perk = r.u8()?;
     Some(PState {
+        guns,
+        nation,
+        perk,
         pos,
         vel,
         yaw,
@@ -477,6 +539,12 @@ pub struct PlayerInfo {
     pub sprint: bool,
     pub has_flag: bool,
     pub slot: u8,
+    /// Arma en la mano (índice de `GUNS`)
+    pub gun: u8,
+    pub nation: u8,
+    /// Nivel (rango) del jugador
+    pub level: u8,
+    pub bot: bool,
     pub pos: V3,
     pub yaw: f32,
     pub pitch: f32,
@@ -493,10 +561,13 @@ impl PlayerInfo {
         w.str(&self.name);
         w.u8(self.team);
         w.u8(self.side);
-        let f = self.alive as u8 | (self.ads as u8) << 1 | (self.sprint as u8) << 2 | (self.has_flag as u8) << 3;
+        let f = self.alive as u8 | (self.ads as u8) << 1 | (self.sprint as u8) << 2 | (self.has_flag as u8) << 3 | (self.bot as u8) << 4;
         w.u8(f);
         w.u8((self.crouch.clamp(0.0, 1.0) * 255.0) as u8);
         w.u8(self.slot);
+        w.u8(self.gun);
+        w.u8(self.nation);
+        w.u8(self.level);
         w.v3(self.pos);
         w.angle(self.yaw);
         w.angle(self.pitch);
@@ -521,8 +592,12 @@ impl PlayerInfo {
             ads: f & 2 != 0,
             sprint: f & 4 != 0,
             has_flag: f & 8 != 0,
+            bot: f & 16 != 0,
             crouch: r.u8()? as f32 / 255.0,
             slot: r.u8()?,
+            gun: r.u8()?,
+            nation: r.u8()?,
+            level: r.u8()?,
             pos: r.v3()?,
             yaw: r.angle()?,
             pitch: r.angle()?,
@@ -578,6 +653,16 @@ pub struct Snapshot {
     pub bomb_state: u8,
     pub bomb_site: u8,
     pub bomb_timer: f32,
+    pub hq_state: u8,
+    pub hq_owner: u8,
+    pub hq_pos: V3,
+    /// Progreso de toma o destrucción del cuartel (0..1, por el equipo `hq_owner` o el atacante)
+    pub hq_progress: f32,
+    /// Nación de los Aliados en esta partida
+    pub allied_nation: u8,
+    /// Modo Zombis: oleada actual y zombis que quedan
+    pub wave: u16,
+    pub zombies_left: u16,
     /// Progreso propio colocando o desactivando la bomba (0..1).
     pub progress: f32,
     pub my_team: u8,
@@ -621,6 +706,13 @@ impl Snapshot {
         w.u8(self.bomb_state);
         w.u8(self.bomb_site);
         w.f32(self.bomb_timer);
+        w.u8(self.hq_state);
+        w.u8(self.hq_owner);
+        w.v3(self.hq_pos);
+        w.f32(self.hq_progress);
+        w.u8(self.allied_nation);
+        w.u16(self.wave);
+        w.u16(self.zombies_left);
         w.f32(self.progress);
         w.u8(self.my_team);
         w.bool(self.my_alive);
@@ -679,6 +771,13 @@ impl Snapshot {
         let bomb_state = r.u8()?;
         let bomb_site = r.u8()?;
         let bomb_timer = r.f32()?;
+        let hq_state = r.u8()?;
+        let hq_owner = r.u8()?;
+        let hq_pos = r.v3()?;
+        let hq_progress = r.f32()?;
+        let allied_nation = r.u8()?;
+        let wave = r.u16()?;
+        let zombies_left = r.u16()?;
         let progress = r.f32()?;
         let my_team = r.u8()?;
         let my_alive = r.bool()?;
@@ -715,6 +814,13 @@ impl Snapshot {
             bomb_state,
             bomb_site,
             bomb_timer,
+            hq_state,
+            hq_owner,
+            hq_pos,
+            hq_progress,
+            allied_nation,
+            wave,
+            zombies_left,
             progress,
             my_team,
             my_alive,

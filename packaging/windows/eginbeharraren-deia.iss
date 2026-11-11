@@ -35,6 +35,7 @@ Source: "..\..\target\release\eginbeharraren-deia.exe"; DestDir: "{app}"; Flags:
 Source: "..\..\target\release\eginbeharraren-deia-server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "servidor-dedicado.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\assets\modelos\*"; DestDir: "{app}\assets\modelos"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Eginbeharraren deia"; Filename: "{app}\eginbeharraren-deia.exe"; IconFilename: "{app}\icon.ico"

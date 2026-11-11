@@ -50,6 +50,8 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVersion=$version" packaging\windows\eginbeharraren-deia.iss
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item target\release\eginbeharraren-deia.exe, target\release\eginbeharraren-deia-server.exe, packaging\windows\servidor-dedicado.bat portable\
+          New-Item -ItemType Directory -Force -Path portable\assets | Out-Null
+          Copy-Item -Recurse assets\modelos portable\assets\
           Compress-Archive -Path portable\* -DestinationPath "dist\EginbeharrarenDeia-$version-Windows-portable.zip"
       - uses: actions/upload-artifact@v4
         with:

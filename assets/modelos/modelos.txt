@@ -1,0 +1,34 @@
+# Catálogo de modelos de artista de Eginbeharraren deia
+# ======================================================
+#
+# Cada línea:   rol = archivo.glb   opción=valor  opción=valor ...
+# Las líneas que empiezan por # no cuentan. Si un archivo no existe, el
+# juego usa su modelo de siempre. Guía completa: docs/modelos.md
+#
+# Esta carpeta también puede estar en tu carpeta de usuario (más fácil,
+# no hace falta ser administrador):
+#   Windows: %APPDATA%\EginbeharrarenDeia\modelos\
+#   Ubuntu:  ~/.config/eginbeharraren-deia/modelos/
+#
+# --- Soldados (animados, con esqueleto) --------------------------------
+# soldado_aliado          = soldado_aliado.glb   altura=1.8
+# soldado_aliado_subfusil = soldado_aliado_thompson.glb
+# soldado_eje             = soldado_eje.glb      altura=1.8
+# soldado_eje_subfusil    = soldado_eje_mp40.glb
+#
+# --- Arma en primera persona (brazos + arma) ---------------------------
+# vista_aliado_fusil    = m1_garand_fp.glb
+# vista_aliado_subfusil = thompson_fp.glb
+# vista_eje_fusil       = kar98k_fp.glb
+# vista_eje_subfusil    = mp40_fp.glb
+#
+# --- Objetos del pueblo (sustituyen a los de siempre) ------------------
+# arbol    = roble.glb
+# arbol2   = castano.glb
+# tanque   = panzer_destruido.glb
+# carro    = carro_heno.glb
+# barril   = barril.glb
+# paja     = bala_paja.glb
+#
+# --- Escenario completo hecho en Blender (sustituye al pueblo) ---------
+# escenario = carentan.glb

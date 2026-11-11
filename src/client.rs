@@ -91,13 +91,22 @@ pub struct NetClient {
     edges: u16,
     pub slot: u8,
     pub team_req: u8,
+    /// Equipamiento elegido y nivel (se mandan en cada paquete)
+    pub loadout: Loadout,
+    pub level: u8,
     chat_id: u16,
     chat_pending: Option<(bool, String, u8)>,
     pub bytes_in: usize,
+    /// Huella del escenario local (se envía al conectar)
+    map_id: u32,
 }
 
 impl NetClient {
     pub fn connect(server: SocketAddr, name: &str) -> std::io::Result<NetClient> {
+        Self::connect_map(server, name, 0)
+    }
+
+    pub fn connect_map(server: SocketAddr, name: &str, map_id: u32) -> std::io::Result<NetClient> {
         let sock = UdpSocket::bind(("0.0.0.0", 0))?;
         sock.set_nonblocking(true)?;
         let now = Instant::now();
@@ -108,6 +117,7 @@ impl NetClient {
             my_id: 0,
             server_name: String::new(),
             name: clean_name(name, 20),
+            map_id,
             started: now,
             last_connect: now,
             last_recv: now,
@@ -133,6 +143,8 @@ impl NetClient {
             edges: 0,
             slot: 0,
             team_req: 0,
+            loadout: Loadout::default(),
+            level: 1,
             chat_id: 0,
             chat_pending: None,
             bytes_in: 0,
@@ -149,6 +161,7 @@ impl NetClient {
         let mut w = W::new(c2s::CONNECT);
         w.u16(PROTOCOL);
         w.str(&self.name);
+        w.u32(self.map_id);
         self.send(&w);
         self.last_connect = Instant::now();
     }
@@ -374,13 +387,15 @@ impl NetClient {
                 slot: self.slot,
             };
             if let Some(p) = self.pred.as_mut() {
-                let gun = gun_index(p.side, p.slot) as u8;
+                let gun = p.gun_id();
+                let side_kick = p.gun().kick_side * (1.0 - 0.4 * p.ads);
                 let out = step(world, p, &cmd, &mut self.rng);
-                let gun_after = gun_index(p.side, p.slot) as u8;
+                let gun_after = p.gun_id();
                 if out.shot.is_some() {
                     self.view_pitch = (self.view_pitch + out.kick).clamp(-1.45, 1.45);
                     self.kick_back += out.kick * 0.6;
-                    self.view_yaw += self.rng.range(-1.0, 1.0) * out.kick * 0.25;
+                    // Cada arma tira hacia un lado distinto
+                    self.view_yaw += (self.rng.range(-1.0, 1.0) + 0.35) * side_kick;
                     self.recoil = 1.0;
                     self.muzzle = 0.05;
                     self.local.push(LocalFx::Shot { gun });
@@ -417,6 +432,10 @@ impl NetClient {
         w.u32(self.snap.as_ref().map(|s| s.tick).unwrap_or(0));
         w.u32(self.last_event);
         w.u8(self.team_req);
+        w.u8(self.loadout.class);
+        w.u8(self.loadout.primary);
+        w.u8(self.loadout.perk);
+        w.u8(self.level);
         match self.chat_pending.as_mut() {
             Some((team_only, text, left)) => {
                 w.u16(self.chat_id);

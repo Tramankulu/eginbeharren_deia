@@ -1,6 +1,6 @@
 [package]
 name = "eginbeharraren-deia"
-version = "0.2.0"
+version = "0.6.0"
 edition = "2021"
 description = "Shooter multijugador en línea de la Segunda Guerra Mundial"
 license = "MIT"
@@ -21,7 +21,9 @@ name = "eginbeharraren-deia-server"
 path = "src/bin/eginbeharraren-deia-server.rs"
 
 [dependencies]
-macroquad = "0.4"
+macroquad = { version = "0.4.14", features = ["audio"] }
+# Texturas de los modelos: PNG (ya incluido en macroquad) y JPEG
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 
 [profile.dev]
 opt-level = 1

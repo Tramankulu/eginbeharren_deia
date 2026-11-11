@@ -1,7 +1,8 @@
 //! Servidor dedicado de Eginbeharraren deia (sin ventana).
 //!
 //! Uso: eginbeharraren-deia-server [--nombre "Mi servidor"] [--puerto 28960] [--max 12]
-//!                      [--modos tdm,dm,sd,ctf] [--limite N] [--tiempo MINUTOS]
+//!                      [--modos tdm,dm,sd,ctf,hq,zombis] [--limite N] [--tiempo MINUTOS]
+//!                      [--bots N] [--nivel-bots 0-3] [--aliados eeuu|britanicos|rusos]
 
 use deia::net::{Mode, DEFAULT_PORT, MAX_PLAYERS};
 use deia::server::{Server, ServerConfig};
@@ -15,9 +16,12 @@ fn usage() -> ! {
          --nombre TEXTO     Nombre que verán los jugadores\n  \
          --puerto N         Puerto UDP (por defecto {DEFAULT_PORT})\n  \
          --max N            Jugadores máximos (2-{MAX_PLAYERS}, por defecto 12)\n  \
-         --modos LISTA      Rotación de modos: dm, tdm, sd, ctf (por defecto tdm)\n  \
+         --modos LISTA      Rotación de modos: dm, tdm, sd, ctf, hq, zombis (por defecto tdm)\n  \
          --limite N         Límite de puntuación (sustituye al del modo)\n  \
-         --tiempo MIN       Límite de tiempo en minutos\n\n\
+         --tiempo MIN       Límite de tiempo en minutos\n  \
+         --bots N           Rellenar con bots hasta N jugadores (por defecto 0)\n  \
+         --nivel-bots N     0 novatos, 1 regulares, 2 veteranos, 3 élite\n  \
+         --aliados NACIÓN   eeuu, britanicos o rusos (por defecto eeuu)\n\n\
          Para jugar por internet, abre el puerto UDP en el router hacia este equipo."
     );
     std::process::exit(0)
@@ -41,12 +45,20 @@ fn main() {
             "--modos" | "--modes" => {
                 cfg.modes = val(i).split(',').filter_map(Mode::parse).collect();
                 if cfg.modes.is_empty() {
-                    eprintln!("Ningún modo válido. Usa dm, tdm, sd o ctf.");
+                    eprintln!("Ningún modo válido. Usa dm, tdm, sd, ctf, hq o zombis.");
                     std::process::exit(2);
                 }
             }
             "--limite" => cfg.score_limit = val(i).parse().ok(),
             "--tiempo" => cfg.time_limit_min = val(i).parse().ok(),
+            "--bots" => cfg.bots = val(i).parse().unwrap_or(0),
+            "--nivel-bots" => cfg.bot_skill = deia::server::bot_skill_of(val(i).parse().unwrap_or(1)),
+            "--aliados" => {
+                cfg.allied_nation = deia::sim::parse_nation(&val(i)).unwrap_or_else(|| {
+                    eprintln!("Nación desconocida: usa eeuu, britanicos o rusos");
+                    std::process::exit(2)
+                })
+            }
             "-h" | "--help" | "--ayuda" => usage(),
             other => {
                 eprintln!("Opción desconocida: {other} (usa --ayuda)");

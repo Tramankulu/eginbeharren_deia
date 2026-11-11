@@ -246,3 +246,132 @@ pub fn mp40() -> Vec<f32> {
 pub fn bolt() -> Vec<f32> {
     clicks(15, &[0.0, 0.25, 0.45], 0.6, 0.35)
 }
+
+pub fn pistol() -> Vec<f32> {
+    gunshot(11, 6500.0, 0.025, 0.4, 0.4, 0.75)
+}
+/// Ametralladora ligera: más grave y con más cola que un subfusil.
+pub fn lmg() -> Vec<f32> {
+    gunshot(12, 3600.0, 0.045, 1.0, 0.5, 0.9)
+}
+/// Fusil de francotirador: un estampido largo que rebota en el valle.
+pub fn sniper() -> Vec<f32> {
+    let mut v = gunshot(13, 6000.0, 0.06, 1.1, 1.4, 0.95);
+    let echo = (0.32 * RATE as f32) as usize;
+    for i in (echo..v.len()).rev() {
+        v[i] += v[i - echo] * 0.3;
+    }
+    normalize(v, 0.95)
+}
+
+/// Latido (cuando la salud está muy baja).
+pub fn heartbeat() -> Vec<f32> {
+    normalize(
+        gen(0.9, |t| {
+            let beat = |t0: f32, a: f32| {
+                let u = t - t0;
+                if u < 0.0 {
+                    0.0
+                } else {
+                    (TAU * (55.0 - 20.0 * u) * u).sin() * (-u / 0.07).exp() * a
+                }
+            };
+            beat(0.0, 1.0) + beat(0.22, 0.7)
+        }),
+        0.9,
+    )
+}
+
+/// Gruñido de zombi.
+pub fn growl() -> Vec<f32> {
+    let mut r = Rng::new(21);
+    let mut lp = Lp::new(500.0);
+    normalize(
+        gen(1.1, |t| {
+            let f = 85.0 + 25.0 * (t * 7.0).sin();
+            let voice = (TAU * f * t).sin().signum() * 0.4 + (TAU * f * 2.01 * t).sin() * 0.3;
+            let rasp = lp.run(r.f() * 2.0 - 1.0) * 1.6;
+            let env = (t / 0.1).min(1.0) * (1.0 - t / 1.1).max(0.0) * (0.7 + 0.3 * (t * 23.0).sin());
+            (voice + rasp) * env
+        }),
+        0.8,
+    )
+}
+
+/// Zarpazo o mordisco.
+pub fn claw() -> Vec<f32> {
+    let mut r = Rng::new(22);
+    let mut lp = Lp::new(2500.0);
+    normalize(
+        gen(0.3, |t| {
+            let n = lp.run(r.f() * 2.0 - 1.0);
+            let thud = (TAU * 90.0 * t).sin() * (-t / 0.05).exp();
+            (n * (-t / 0.08).exp() * 1.4 + thud) * (t / 0.004).min(1.0)
+        }),
+        0.85,
+    )
+}
+
+/// Subida de rango.
+pub fn rank_up() -> Vec<f32> {
+    normalize(
+        gen(1.0, |t| {
+            let note = |t0: f32, f: f32| {
+                let u = t - t0;
+                if u < 0.0 {
+                    0.0
+                } else {
+                    ((TAU * f * u).sin() + 0.4 * (TAU * f * 2.0 * u).sin()) * (-u / 0.35).exp() * (u / 0.01).min(1.0)
+                }
+            };
+            note(0.0, 523.0) + note(0.12, 659.0) + note(0.24, 784.0) + note(0.36, 1047.0) * 0.8
+        }),
+        0.6,
+    )
+}
+
+/// WAV estéreo a partir de un sonido mono, colocado a la izquierda (-1) o a
+/// la derecha (1). El oído lejano lo recibe algo después y más apagado, como
+/// en la realidad: así se distingue de dónde viene un disparo.
+pub fn to_wav_stereo(s: &[f32], pan: f32) -> Vec<u8> {
+    let pan = pan.clamp(-1.0, 1.0);
+    let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
+    let (gl, gr) = (a.cos() * 1.2, a.sin() * 1.2);
+    let delay = (pan.abs() * 0.0006 * RATE as f32) as usize;
+    let mut far = Lp::new(3500.0 - 2000.0 * pan.abs());
+    let n = s.len() + delay;
+    let mut l = vec![0.0f32; n];
+    let mut r = vec![0.0f32; n];
+    for i in 0..n {
+        let x = s.get(i).copied().unwrap_or(0.0);
+        let late = if i >= delay { far.run(s.get(i - delay).copied().unwrap_or(0.0)) } else { 0.0 };
+        if pan >= 0.0 {
+            r[i] = x * gr;
+            l[i] = late * gl;
+        } else {
+            l[i] = x * gl;
+            r[i] = late * gr;
+        }
+    }
+    let data_len = (n * 4) as u32;
+    let mut v = Vec::with_capacity(44 + data_len as usize);
+    v.extend_from_slice(b"RIFF");
+    v.extend_from_slice(&(36 + data_len).to_le_bytes());
+    v.extend_from_slice(b"WAVE");
+    v.extend_from_slice(b"fmt ");
+    v.extend_from_slice(&16u32.to_le_bytes());
+    v.extend_from_slice(&1u16.to_le_bytes());
+    v.extend_from_slice(&2u16.to_le_bytes());
+    v.extend_from_slice(&RATE.to_le_bytes());
+    v.extend_from_slice(&(RATE * 4).to_le_bytes());
+    v.extend_from_slice(&4u16.to_le_bytes());
+    v.extend_from_slice(&16u16.to_le_bytes());
+    v.extend_from_slice(b"data");
+    v.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..n {
+        for x in [l[i], r[i]] {
+            v.extend_from_slice(&((x.clamp(-1.0, 1.0) * 32000.0) as i16).to_le_bytes());
+        }
+    }
+    v
+}
